@@ -95,6 +95,28 @@ py-train -m microwakeword.model_train_eval --training_config spikes/train_smoke.
 | Featurize 2k clips, 14 workers | 75 s (1600 train clips x2 reps x10 slides = 32k spectrograms, 1.5 GB float32) |
 | Train 500 steps + streaming int8 TFLite export | ~3 min total |
 
+### Spike B: German TTS quality (2026-10-15)
+
+Piper `de_DE-mls-medium` turned out to be unusable for German wake words: the batched output is
+numerically identical to Piper's own path, the voice itself produces gibberish for "Dscharwis"
+(1/24 Whisper hits). The old Tater trainer used modern voice-cloning TTS (OmniVoice, Qwen3-TTS, MOSS).
+
+`spikes/ttsb/` compares voice-cloning models with 10 German reference voices from Kartoffelphon
+(`refs.py`), one venv per model under `/opt/spike/<name>` in the container, Whisper large-v3-turbo
+scoring (`score_asr.py`: spelling regex or Kölner Phonetik match) and a listening page (`report.py`
+-> `data/spikes/listen/index.html`).
+
+| Model | Whisper hits | Clips/s (3090) | VRAM |
+|---|---|---|---|
+| OmniVoice clone (chosen, best by ear) | 29-30/30 | 1.3; 6.0 with 3 s refs + 16 steps | 5-9 GB |
+| Qwen3-TTS 1.7B Base clone | 29/30 | 2.3-3.0 (HF generate) | 9-19 GB |
+| Audio8 TTS 0.6B clone | 30/30 | 2.5-3.0 | 10-19 GB |
+| OmniVoice voice design | 18/18 | 6.7 | 2 GB |
+| VoxCPM2 clone + design | 37/48 | 1.0 (no batching) | 6 GB |
+| Piper MLS / Thorsten | 1/24 / 4/4 | very fast | - |
+
+Batch size beyond 16 does not raise throughput for any of them; reference length and diffusion steps do.
+
 Open optimizations: cache background audio in RAM, store spectrograms as uint16 (half size),
 fewer stored slide frames.
 
