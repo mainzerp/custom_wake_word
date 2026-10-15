@@ -12,7 +12,7 @@ Goals:
 - Profiles (`fast`, `thorough`).
 - Output: ESPHome-valid manifest (`.json`) + `.tflite`.
 
-Status: early. Spikes only, see `spikes/`.
+Status: early. Web UI with Sample Studio works; pipeline stages are spikes (`spikes/`).
 
 ## Layout
 
@@ -22,13 +22,31 @@ Status: early. Spikes only, see `spikes/`.
 | `docker/requirements-*.in` | Direct dependencies (exact pins) |
 | `docker/requirements-*.txt` | Fully resolved lock files (generated, see below) |
 | `spikes/` | Throwaway experiments with measurements |
-| `trainer/` | The pipeline (WIP) |
+| `trainer/` | Python package: pipeline (WIP), Sample Studio storage (`trainer/studio/`), FastAPI server (`trainer/server/`) |
+| `ui/` | Web UI "Wakeforge" (Vite + Svelte 5 + TypeScript) |
 | `data/` | All datasets, caches, models and runs. Git-ignored, bind-mounted to `/app/data` |
+
+Data layout below `data/`:
+
+| Path | Content |
+|---|---|
+| `recordings/<YYYYMMDD-HHMMSS>/` | Sample Studio takes: `recording.wav`, `clips/`, `clips.json`, `session.json` |
+| `samples/positive/`, `samples/negative/` | Sorted real clips (16 kHz mono PCM16). A clip's label is the folder holding its copy |
+| `datasets/` | Negative feature sets and augmentation audio copied from the old trainer volume |
 
 ## Usage
 
 ```sh
+cd ui && npm ci --before=YYYY-MM-DD && npm run build && cd ..
 docker compose up -d --build
+```
+
+The container starts the API and UI on http://localhost:8790 (uvicorn with auto-reload on `trainer/`).
+For UI development run `npm run dev` in `ui/` and open http://localhost:5173 (proxies `/api` to 8790).
+
+Shell into the container:
+
+```sh
 docker exec -it cww-trainer bash
 ```
 

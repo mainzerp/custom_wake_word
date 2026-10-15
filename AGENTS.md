@@ -16,7 +16,13 @@
   in `%APPDATA%\Docker\settings-store.json`). The GUI move fails (robocopy exit 1 treated as error).
 - Old trainer volume is `wake-word_mww-data` (not `mww-data`); mount it read-only only.
 - Dependency policy: exact pins, released >= 7 days ago. Regenerate lock files with
-  `uv pip compile ... --exclude-newer <today-7d>` (see README).
+  `uv pip compile ... --exclude-newer <today-7d>` (see README). npm: `npm install --before=<today-7d>`.
+- UI: `ui/` (Svelte 5 runes, TypeScript). Verify with `npm run check` and `npm run build` in `ui/`.
+  The container serves `ui/dist` plus `/api` on port 8790; `npm run dev` serves on 5173 with a proxy.
+  UI strings are English. Look: "Dark Neon / Synth" (tokens in `ui/src/app.css`).
+- Quick backend run on the host without Docker (Studio only, no GPU):
+  `uv run --no-project --python 3.12 --with fastapi==0.142.4 --with uvicorn==0.54.0 --with soundfile==0.14.0 --with scipy==1.18.1 --with numpy==2.5.3 python -m uvicorn trainer.server.app:app --port 8790`
+- Playwright MCP may only write screenshots below `C:\Users\patric` (e.g. `~/.playwright-mcp/`).
 - Reference implementation (old trainer): container `mww-trainer`, volume `mww-data`,
   repo `F:\Github\wake-word` (published models in `models/`, Sample Studio in `tools/`).
 - Quick local CPU check without Docker:
