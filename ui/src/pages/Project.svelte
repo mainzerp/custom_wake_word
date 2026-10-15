@@ -4,6 +4,7 @@
   import Stepper from "../components/project/Stepper.svelte";
   import Soon from "./Soon.svelte";
   import Studio from "./Studio.svelte";
+  import Generate from "./steps/Generate.svelte";
   import WakeWord from "./steps/WakeWord.svelte";
   import { projects } from "../lib/api";
   import { href } from "../lib/router.svelte";
@@ -60,7 +61,7 @@
       <div class="stats">
         <div class="stat pos"><span class="eyebrow">Positive</span><strong class="mono">{project.summary.positive}</strong></div>
         <div class="stat neg"><span class="eyebrow">Negative</span><strong class="mono">{project.summary.negative}</strong></div>
-        <div class="stat"><span class="eyebrow">Synthetic</span><strong class="mono">{project.summary.generated}</strong></div>
+        <div class="stat"><span class="eyebrow">Synthetic</span><strong class="mono">{project.summary.generated.toLocaleString()}</strong></div>
       </div>
     </header>
 
@@ -77,6 +78,8 @@
     {#key project.slug}
       {#if current === "wakeword"}
         <WakeWord {project} />
+      {:else if current === "generate"}
+        <Generate {project} />
       {:else if current === "record"}
         <Studio />
       {:else}

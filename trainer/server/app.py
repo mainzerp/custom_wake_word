@@ -11,12 +11,14 @@ from urllib.parse import unquote
 
 import soundfile as sf
 from fastapi import APIRouter, FastAPI, Header, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from trainer import projects
+from trainer import jobs, projects
 from trainer.paths import UI_DIST
+from trainer.server import generate_api
 from trainer.studio import store
 
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
@@ -30,6 +32,12 @@ studio_api = APIRouter(prefix="/api/projects/{slug}/studio")
 @app.exception_handler(sf.LibsndfileError)
 async def bad_request(_: Request, exc: Exception) -> JSONResponse:
     return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request(_: Request, exc: RequestValidationError) -> JSONResponse:
+    messages = [f"{'.'.join(str(p) for p in e['loc'][1:])}: {e['msg']}".lstrip(": ") for e in exc.errors()]
+    return JSONResponse({"error": "; ".join(messages)}, status_code=422)
 
 
 @app.exception_handler(FileNotFoundError)
@@ -181,8 +189,19 @@ def clip(slug: str, session: str, name: str) -> FileResponse:
     return FileResponse(studio_for(slug).clip_path(session, name), media_type="audio/wav")
 
 
+@app.get("/api/jobs/active")
+def active_job() -> dict:
+    return {"job": jobs.active()}
+
+
+@project_api.post("/{slug}/jobs/{job_id}/stop")
+def stop_job(slug: str, job_id: str) -> dict:
+    return jobs.stop(jobs.job_dir(projects.project_dir(slug), job_id))
+
+
 app.include_router(project_api)
 app.include_router(studio_api)
+app.include_router(generate_api.router)
 
 if UI_DIST.is_dir():
     app.mount("/", StaticFiles(directory=UI_DIST, html=True), name="ui")

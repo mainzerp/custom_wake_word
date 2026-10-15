@@ -7,6 +7,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get("CWW_DATA", REPO_ROOT / "data")).resolve()
 
 PROJECTS = DATA / "projects"
+PIPER_MODELS = DATA / "models" / "piper"
 UI_DIST = REPO_ROOT / "ui" / "dist"
 
 # Pre-project layout, only read by `python -m trainer.projects migrate`.

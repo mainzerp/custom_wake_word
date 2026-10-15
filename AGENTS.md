@@ -26,6 +26,11 @@
   works. Hash routes: `#/`, `#/new`, `#/p/<slug>/<step>`. All per-wake-word data lives in
   `data/projects/<slug>/`; APIs are `/api/projects/...` and `/api/projects/<slug>/studio/...`.
 - After a UI build the container picks up `ui/dist` immediately (no restart); uvicorn reloads on `trainer/` changes.
+- The server runs in the TF venv and must not import Piper/onnxruntime. GPU stages run as detached
+  subprocess jobs via `trainer/jobs.py` (`py-tts -m ...` / `py-train -m ...`, one job at a time); the
+  worker writes `progress.json` and handles SIGTERM as "stop after this batch". Follow this pattern for
+  featurize/train/mining. The UI polls status once per second while a job runs.
+- Modules run with `python script.py` inside the container need `-e PYTHONPATH=/app`; `-m trainer...` works as is.
 - Quick backend run on the host without Docker (Studio only, no GPU):
   `uv run --no-project --python 3.12 --with fastapi==0.142.4 --with uvicorn==0.54.0 --with soundfile==0.14.0 --with scipy==1.18.1 --with numpy==2.5.3 python -m uvicorn trainer.server.app:app --port 8790`
 - Playwright MCP may only write screenshots below `C:\Users\patric` (e.g. `~/.playwright-mcp/`).

@@ -1,5 +1,17 @@
 import { slug } from "./state.svelte";
-import type { Counts, Label, Project, ProjectSettings, Session, SplitParams } from "./types";
+import type {
+  Counts,
+  GenClip,
+  GenerateParams,
+  GenerateStatus,
+  Job,
+  Label,
+  Project,
+  ProjectSettings,
+  Range,
+  Session,
+  SplitParams,
+} from "./types";
 
 type SessionResult = { session: Session; counts: Counts };
 
@@ -21,7 +33,23 @@ export const projects = {
   update: (slug: string, settings: Partial<ProjectSettings>) => send<Project>("PATCH", `/api/projects/${encodeURIComponent(slug)}`, settings),
 };
 
-const base = () => `/api/projects/${encodeURIComponent(slug())}/studio`;
+const projectBase = () => `/api/projects/${encodeURIComponent(slug())}`;
+
+export const generate = {
+  status: () => request<GenerateStatus>(`${projectBase()}/generate`),
+  start: (params: GenerateParams) => post<Job>(`${projectBase()}/generate/start`, params),
+  reset: () => post<GenerateStatus>(`${projectBase()}/generate/reset`, {}),
+  preview: (phrase: string, length_scale: Range) =>
+    post<{ voice: string; clips: GenClip[] }>(`${projectBase()}/generate/preview`, { phrase, length_scale }),
+  samples: (n = 12) => request<{ clips: GenClip[] }>(`${projectBase()}/generate/samples?n=${n}`),
+};
+
+export const jobs = {
+  active: () => request<{ job: Job | null }>("/api/jobs/active"),
+  stop: (id: string) => post<Job>(`${projectBase()}/jobs/${id}/stop`, {}),
+};
+
+const base = () => `${projectBase()}/studio`;
 
 export const studio = {
   sessions: () => request<{ sessions: Session[]; counts: Counts }>(`${base()}/sessions`),

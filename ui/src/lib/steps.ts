@@ -12,7 +12,7 @@ export interface Step {
 
 export const STEPS = [
   { id: "wakeword", label: "Wake word", icon: "type", sub: "Name, language and how the TTS voices should pronounce it.", available: true },
-  { id: "generate", label: "Synthetic samples", icon: "sparkles", sub: "Thousands of TTS speakers saying your wake word.", available: false, milestone: "Milestone 1" },
+  { id: "generate", label: "Synthetic samples", icon: "sparkles", sub: "Hundreds of Piper TTS speakers saying your wake word, generated on the GPU.", available: true },
   { id: "record", label: "Own recordings", icon: "mic", sub: "Record takes, split them, sort every clip.", available: true, optional: true },
   { id: "train", label: "Training", icon: "pulse", sub: "Featurize, train and calibrate the model.", available: false, milestone: "Milestone 1" },
   { id: "mining", label: "Mining", icon: "radar", sub: "Hunt false triggers in hours of speech and feed them back.", available: false, optional: true, milestone: "Milestone 2" },
@@ -30,7 +30,7 @@ export function stepState(id: StepId, p: Project): { done: boolean; metric: stri
     case "wakeword":
       return { done: !!p.wake_word, metric: p.wake_word };
     case "generate":
-      return { done: s.generated > 0, metric: `${s.generated} clips` };
+      return { done: s.generated > 0, metric: `${s.generated.toLocaleString()} clips` };
     case "record":
       return { done: s.positive > 0, metric: `${s.positive} pos · ${s.negative} neg` };
     case "train":

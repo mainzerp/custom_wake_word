@@ -1,12 +1,7 @@
 <script lang="ts">
-  let { step }: { step: "generate" | "train" | "mining" | "export" } = $props();
+  let { step }: { step: "train" | "mining" | "export" } = $props();
 
   const CONTENT = {
-    generate: {
-      milestone: "Milestone 1",
-      steps: ["Pick voices", "Speed & variation", "Generate", "Listen & reject"],
-      text: "Batched Piper TTS on the GPU: every spelling across all speakers, with tempo and noise variation. 50k clips in under 20 minutes.",
-    },
     train: {
       milestone: "Milestone 1",
       steps: ["Featurize", "Train", "Calibrate", "Compare"],

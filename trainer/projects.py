@@ -3,7 +3,8 @@
   <slug>/project.json   settings (wake word, language, TTS spellings, manifest author/website)
   <slug>/recordings/    Sample Studio takes
   <slug>/samples/       sorted real clips (positive/, negative/)
-  <slug>/generated/     synthetic positives (TTS)
+  <slug>/generated/     synthetic positives (TTS corpus shards, previews)
+  <slug>/jobs/          pipeline job state and logs
   <slug>/runs/          training runs
   <slug>/models/        exported models
 
@@ -23,6 +24,7 @@ from pathlib import Path
 
 from trainer.paths import LEGACY_RECORDINGS, LEGACY_SAMPLES, PROJECTS
 from trainer.studio.splitter import sanitize_prefix
+from trainer.tts import corpus
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 LANGUAGE_RE = re.compile(r"^[a-z]{2}$")
@@ -74,7 +76,7 @@ def summary(path: Path) -> dict:
         "positive": count_files(path / "samples" / "positive"),
         "negative": count_files(path / "samples" / "negative"),
         "sessions": count_dirs(path / "recordings"),
-        "generated": count_files(path / "generated", "**/*.wav"),
+        "generated": corpus.load_index(corpus.corpus_dir(path))["total"],
         "runs": count_dirs(path / "runs"),
         "models": count_files(path / "models", "*.tflite"),
     }

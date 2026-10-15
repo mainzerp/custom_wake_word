@@ -12,7 +12,8 @@ Goals:
 - Profiles (`fast`, `thorough`).
 - Output: ESPHome-valid manifest (`.json`) + `.tflite`.
 
-Status: early. Web UI with projects, setup wizard and Sample Studio works; pipeline stages are spikes (`spikes/`).
+Status: early. Web UI with projects, setup wizard, synthetic sample generation and Sample Studio works;
+featurize/train/export are still spikes (`spikes/`).
 
 ## Web UI workflow
 
@@ -21,7 +22,9 @@ opens a four-page wizard (name + language, TTS spellings, manifest credits, revi
 a step bar guides through the workflow, every step stays clickable and shows its status:
 
 1. Wake word: settings (name, language, TTS spellings, author, website)
-2. Synthetic samples (Piper TTS) - planned, milestone 1
+2. Synthetic samples: batched multi-speaker Piper on the GPU as a background job (live progress,
+   stop/continue, pronunciation preview per spelling, random listening). Voices: de, en, fr, nl
+   (`trainer/tts/catalog.py`)
 3. Own recordings: Sample Studio (optional, recommended)
 4. Training - planned, milestone 1
 5. Mining - planned, milestone 2 (optional)
@@ -48,7 +51,10 @@ Data layout below `data/`:
 | `projects/<slug>/project.json` | Project settings: `wake_word`, `language`, `tts_phrases`, `author`, `website` |
 | `projects/<slug>/recordings/<YYYYMMDD-HHMMSS>/` | Sample Studio takes: `recording.wav`, `clips/`, `clips.json`, `session.json` |
 | `projects/<slug>/samples/positive/`, `.../negative/` | Sorted real clips (16 kHz mono PCM16). A clip's label is the folder holding its copy |
-| `projects/<slug>/generated/`, `runs/`, `models/` | Synthetic positives, training runs, exported models (planned) |
+| `projects/<slug>/generated/tts/` | Synthetic corpus: `corpus.json` index + `shard-*.npz` (int16 clips concatenated, offsets, speaker, phrase, scales), see `trainer/tts/corpus.py` |
+| `projects/<slug>/generated/preview/` | Last pronunciation previews per spelling |
+| `projects/<slug>/jobs/<YYYYMMDD-HHMMSS>-<kind>/` | Background job: `job.json` (command, pid), `progress.json` (written by the worker), `log.txt` |
+| `projects/<slug>/runs/`, `models/` | Training runs, exported models (planned) |
 | `datasets/` | Shared negative feature sets and augmentation audio copied from the old trainer volume |
 | `models/piper/` | Shared Piper voices (incl. the batched-`sid` ONNX patch) |
 
@@ -74,7 +80,8 @@ docker exec -it cww-trainer bash
 Inside the container, use the launchers `py-tts` (Piper venv) and `py-train` (TF venv):
 
 ```sh
-py-tts spikes/piper_throughput.py --phrase Dscharwis --count 2000 --batch 128
+py-tts -m trainer.tts.generate run --project data/projects/dscharwis --job /tmp/job --count 50000
+py-tts -m trainer.tts.generate preview --project data/projects/dscharwis --phrase Dscharwis --out /tmp/preview
 py-train spikes/featurize.py --input data/spikes/piper --output data/spikes/features/piper
 py-train -m microwakeword.model_train_eval --training_config spikes/train_smoke.yaml ... mixednet ...
 ```
@@ -83,12 +90,17 @@ py-train -m microwakeword.model_train_eval --training_config spikes/train_smoke.
 
 | Stage | Result |
 |---|---|
-| Piper `de_DE-mls-medium`, batch 128, GPU | ~260-320 samples/s inference, 45 samples/s end-to-end (serial resample + WAV write), ~5 % rejected; 50k in ~18 min (old trainer: 28 h) |
+| Piper `de_DE-mls-medium`, spike (batch 128, per-clip WAV) | ~260-320 samples/s inference, 45 samples/s end-to-end (serial resample + WAV write), ~5 % rejected; 50k in ~18 min (old trainer: 28 h) |
+| Piper, `trainer.tts.generate` (batch 64, tuned CUDA arena, vectorized resample in threads, npz shards) | ~240 clips/s end-to-end, ~4 % rejected; 50k in ~3.5 min. Inference is ~95 % of the time |
 | Featurize 2k clips, 14 workers | 75 s (1600 train clips x2 reps x10 slides = 32k spectrograms, 1.5 GB float32) |
 | Train 500 steps + streaming int8 TFLite export | ~3 min total |
 
-Open optimizations: parallel resample/write, cache background audio in RAM, store spectrograms
-as uint16 (half size), fewer stored slide frames.
+Open optimizations: cache background audio in RAM, store spectrograms as uint16 (half size),
+fewer stored slide frames.
+
+Piper on CUDA with varying output lengths: the default arena (power-of-two growth, max cuDNN workspace)
+nearly fills the 24 GB at batch 128 and then stalls for minutes. `arena_extend_strategy=kSameAsRequested`
+plus `cudnn_conv_use_max_workspace=0` at batch 64 gives a steady ~300/s (`spikes/piper_shapes.py`).
 
 ## Dependencies
 
