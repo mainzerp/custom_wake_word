@@ -1,0 +1,8 @@
+onnxruntime-gpu[cuda,cudnn]==1.30.0
+piper-tts==1.8.0
+onnx==1.19.1
+numpy==2.5.3
+scipy==1.18.1
+soundfile==0.14.0
+pyyaml==6.0.3
+tqdm==4.70.1

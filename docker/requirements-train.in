@@ -1,0 +1,14 @@
+tensorflow[and-cuda]==2.21.0
+microwakeword @ git+https://github.com/kahrendt/microWakeWord@4665173cd35f1cff9a61e06fc427f124766c488e
+numpy==2.5.3
+scipy==1.18.1
+soundfile==0.14.0
+audiomentations==0.43.1
+mmap_ninja==0.9.0
+pymicro-features==2.0.2
+pyyaml==6.0.3
+webrtcvad-wheels==2.0.14.post1
+ai-edge-litert==2.3.0
+datasets==5.1.0
+tqdm==4.70.1
+tensorboard==2.21.0

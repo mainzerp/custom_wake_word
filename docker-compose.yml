@@ -1,0 +1,22 @@
+services:
+  trainer:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: custom-wake-word:dev
+    container_name: cww-trainer
+    init: true
+    shm_size: 8gb
+    volumes:
+      - ./:/app
+    working_dir: /app
+    environment:
+      CWW_DATA: /app/data
+      HF_HOME: /app/data/cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

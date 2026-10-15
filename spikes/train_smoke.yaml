@@ -1,0 +1,36 @@
+# Spike C: short GPU training run from our own features.
+batch_size: 16
+clip_duration_ms: 1500
+eval_step_interval: 250
+window_step_ms: 10
+train_dir: data/spikes/train_smoke
+learning_rates: [0.001]
+training_steps: [500]
+positive_class_weight: [1]
+negative_class_weight: [20]
+maximization_metric: average_viable_recall
+minimization_metric: null
+target_minimization: 0.9
+time_mask_count: [0]
+time_mask_max_size: [0]
+freq_mask_count: [0]
+freq_mask_max_size: [0]
+features:
+  - features_dir: data/spikes/features/piper
+    sampling_weight: 2.0
+    penalty_weight: 1.0
+    truth: true
+    truncation_strategy: truncate_start
+    type: mmap
+  - features_dir: data/datasets/negative_datasets/dinner_party
+    sampling_weight: 12.0
+    penalty_weight: 1.0
+    truth: false
+    truncation_strategy: random
+    type: mmap
+  - features_dir: data/datasets/negative_datasets/dinner_party_eval
+    sampling_weight: 0.0
+    penalty_weight: 1.0
+    truth: false
+    truncation_strategy: split
+    type: mmap
