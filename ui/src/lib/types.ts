@@ -33,6 +33,47 @@ export interface Counts {
   negative: number;
 }
 
+export interface ProjectSettings {
+  wake_word: string;
+  language: string;
+  tts_phrases: string[];
+  author: string;
+  website: string;
+}
+
+export interface ProjectSummary extends Counts {
+  sessions: number;
+  generated: number;
+  runs: number;
+  models: number;
+}
+
+export interface Project extends ProjectSettings {
+  slug: string;
+  created: string;
+  updated: string;
+  summary: ProjectSummary;
+}
+
+export const LANGUAGES: Record<string, string> = {
+  de: "German",
+  en: "English",
+  fr: "French",
+  es: "Spanish",
+  it: "Italian",
+  nl: "Dutch",
+  pl: "Polish",
+  pt: "Portuguese",
+  sv: "Swedish",
+  da: "Danish",
+  no: "Norwegian",
+  fi: "Finnish",
+  cs: "Czech",
+  tr: "Turkish",
+  ru: "Russian",
+  uk: "Ukrainian",
+};
+
 export const DEFAULT_PARAMS: SplitParams = {
   margin_db: 12,
   min_len: 0.3,

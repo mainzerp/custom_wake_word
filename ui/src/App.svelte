@@ -1,32 +1,18 @@
 <script lang="ts">
   import Icon from "./components/Icon.svelte";
-  import Studio from "./pages/Studio.svelte";
-  import Soon from "./pages/Soon.svelte";
-  import { counts, toasts } from "./lib/state.svelte";
+  import Home from "./pages/Home.svelte";
+  import NewProject from "./pages/NewProject.svelte";
+  import Project from "./pages/Project.svelte";
+  import { href, router } from "./lib/router.svelte";
+  import { toasts } from "./lib/state.svelte";
 
-  const PAGES = [
-    { id: "studio", label: "Studio", icon: "mic", title: "Sample Studio", sub: "Record takes, split them, sort every clip." },
-    { id: "training", label: "Training", icon: "pulse", title: "Training", sub: "Generate, featurize, train, calibrate, export." },
-    { id: "mining", label: "Mining", icon: "radar", title: "Hard-Negative Mining", sub: "Hunt false triggers and feed them back." },
-    { id: "models", label: "Models", icon: "cube", title: "Models", sub: "Compare runs and ship them to ESPHome." },
-  ] as const;
-
-  type PageId = (typeof PAGES)[number]["id"];
-  const fromHash = (): PageId => (PAGES.find((p) => `#${p.id}` === location.hash)?.id ?? "studio");
-  let page = $state<PageId>(fromHash());
-  const current = $derived(PAGES.find((p) => p.id === page)!);
-
-  $effect(() => {
-    const onHash = () => (page = fromHash());
-    addEventListener("hashchange", onHash);
-    return () => removeEventListener("hashchange", onHash);
-  });
+  const route = $derived(router.route);
 </script>
 
 <div class="shell">
-  <nav class="rail">
-    <a class="logo" href="#studio" aria-label="Wakeforge">
-      <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+  <nav class="topbar">
+    <a class="logo" href={href.home} aria-label="Wakeforge home">
+      <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
         <defs>
           <linearGradient id="lg" x1="0" x2="1">
             <stop offset="0" stop-color="#29f0ff" /><stop offset="1" stop-color="#ff3df2" />
@@ -34,38 +20,24 @@
         </defs>
         <path d="M3 16h4l3-9 4 18 4-14 3 8 2-3h6" fill="none" stroke="url(#lg)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
+      <span class="brand">WAKE<span>FORGE</span></span>
     </a>
-    {#each PAGES as p (p.id)}
-      <a class="nav" class:active={page === p.id} href="#{p.id}" title={p.title}>
-        <Icon name={p.icon} size={20} />
-        <span>{p.label}</span>
-      </a>
-    {/each}
+    {#if route.view !== "new"}
+      <a class="newbtn" href={href.new}><Icon name="plus" size={16} /> New wake word</a>
+    {/if}
   </nav>
 
   <main>
-    <header>
-      <div>
-        <div class="brand">WAKE<span>FORGE</span></div>
-        <h1>{current.title}</h1>
-        <p class="dim">{current.sub}</p>
-      </div>
-      <div class="stats">
-        <div class="stat pos">
-          <span class="eyebrow">Positive</span>
-          <strong class="mono">{counts.positive}</strong>
-        </div>
-        <div class="stat neg">
-          <span class="eyebrow">Negative</span>
-          <strong class="mono">{counts.negative}</strong>
-        </div>
-      </div>
-    </header>
-
-    {#if page === "studio"}
-      <Studio />
+    {#if route.view === "home"}
+      <header class="page-head">
+        <h1>Wake words</h1>
+        <p class="dim">Pick a wake word to continue, or start a new one.</p>
+      </header>
+      <Home />
+    {:else if route.view === "new"}
+      <NewProject />
     {:else}
-      <Soon page={page} />
+      <Project slug={route.slug} step={route.step} />
     {/if}
   </main>
 </div>
@@ -78,96 +50,36 @@
 
 <style>
   .shell {
-    display: grid;
-    grid-template-columns: 84px 1fr;
     min-height: 100vh;
   }
 
-  .rail {
+  .topbar {
     position: sticky;
     top: 0;
-    height: 100vh;
+    z-index: 20;
     display: flex;
-    flex-direction: column;
+    justify-content: space-between;
     align-items: center;
-    gap: 6px;
-    padding: 18px 0;
-    border-right: 1px solid var(--line);
-    background: linear-gradient(180deg, rgba(10, 8, 32, 0.85), rgba(5, 4, 13, 0.6));
+    padding: 12px 32px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(10, 8, 32, 0.9), rgba(5, 4, 13, 0.7));
     backdrop-filter: blur(12px);
   }
 
   .logo {
-    display: grid;
-    place-items: center;
-    width: 52px;
-    height: 52px;
-    margin-bottom: 18px;
-    border-radius: 16px;
-    background: rgba(155, 107, 255, 0.08);
-    border: 1px solid var(--line-strong);
-    filter: drop-shadow(0 0 10px rgba(41, 240, 255, 0.35));
-  }
-
-  .nav {
-    position: relative;
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 5px;
-    width: 68px;
-    padding: 10px 0 8px;
-    border-radius: 14px;
-    color: var(--text-faint);
+    gap: 12px;
     text-decoration: none;
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    transition: color 0.15s, background 0.15s;
-  }
-
-  .nav:hover {
-    color: var(--text);
-    background: rgba(255, 255, 255, 0.04);
-  }
-
-  .nav.active {
-    color: var(--cyan);
-    background: rgba(41, 240, 255, 0.08);
-    text-shadow: 0 0 12px rgba(41, 240, 255, 0.6);
-  }
-
-  .nav.active::before {
-    content: "";
-    position: absolute;
-    left: -8px;
-    top: 14px;
-    bottom: 14px;
-    width: 3px;
-    border-radius: 3px;
-    background: var(--cyan);
-    box-shadow: var(--glow-cyan);
-  }
-
-  main {
-    padding: 26px 32px 48px;
-    min-width: 0;
-  }
-
-  header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    gap: 24px;
-    margin-bottom: 24px;
+    filter: drop-shadow(0 0 10px rgba(41, 240, 255, 0.3));
   }
 
   .brand {
     font-family: var(--font-display);
     font-weight: 800;
-    font-size: 12px;
+    font-size: 13px;
     letter-spacing: 0.4em;
     color: var(--text-dim);
-    margin-bottom: 8px;
   }
 
   .brand span {
@@ -175,6 +87,34 @@
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
+  }
+
+  .newbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line-strong);
+    color: var(--text);
+    text-decoration: none;
+    font-size: 14px;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .newbtn:hover {
+    background: rgba(155, 107, 255, 0.12);
+    border-color: var(--violet);
+  }
+
+  main {
+    padding: 26px 32px 48px;
+    max-width: 1500px;
+    margin: 0 auto;
+  }
+
+  .page-head {
+    margin-bottom: 24px;
   }
 
   h1 {
@@ -186,39 +126,8 @@
     color: transparent;
   }
 
-  header p {
+  .page-head p {
     margin: 6px 0 0;
-  }
-
-  .stats {
-    display: flex;
-    gap: 12px;
-  }
-
-  .stat {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 116px;
-    padding: 10px 16px;
-    border-radius: 14px;
-    border: 1px solid var(--line);
-    background: var(--panel);
-  }
-
-  .stat strong {
-    font-size: 26px;
-    font-weight: 600;
-  }
-
-  .stat.pos strong {
-    color: var(--cyan);
-    text-shadow: var(--glow-cyan);
-  }
-
-  .stat.neg strong {
-    color: var(--magenta);
-    text-shadow: var(--glow-magenta);
   }
 
   .toasts {

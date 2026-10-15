@@ -14,6 +14,13 @@
     chevron: "M9 6l6 6-6 6",
     sliders: "M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4",
     replay: "M4 12a8 8 0 1 0 3-6.2M4 4v5h5",
+    plus: "M12 5v14M5 12h14",
+    next: "M5 12h14M13 6l6 6-6 6",
+    back: "M19 12H5M11 6l-6 6 6 6",
+    type: "M5 7V5h14v2M12 5v14M9 19h6",
+    sparkles: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3ZM19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7L19 16Z",
+    download: "M12 4v11m-5-5 5 5 5-5M5 20h14",
+    grid: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
   };
 
   let { name, size = 18, stroke = 1.8 }: { name: keyof typeof PATHS | string; size?: number; stroke?: number } = $props();

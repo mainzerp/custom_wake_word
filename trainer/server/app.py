@@ -1,4 +1,4 @@
-"""FastAPI app: Sample Studio API plus the built Svelte UI.
+"""FastAPI app: project and Sample Studio API plus the built Svelte UI.
 
   py-train -m uvicorn trainer.server.app:app --host 0.0.0.0 --port 8790
 """
@@ -15,13 +15,15 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from trainer import projects
 from trainer.paths import UI_DIST
 from trainer.studio import store
 
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
 
 app = FastAPI(title="custom_wake_word")
-studio = APIRouter(prefix="/api/studio")
+project_api = APIRouter(prefix="/api/projects")
+studio_api = APIRouter(prefix="/api/projects/{slug}/studio")
 
 
 @app.exception_handler(ValueError)
@@ -33,6 +35,45 @@ async def bad_request(_: Request, exc: Exception) -> JSONResponse:
 @app.exception_handler(FileNotFoundError)
 async def not_found(_: Request, exc: Exception) -> JSONResponse:
     return JSONResponse({"error": str(exc)}, status_code=404)
+
+
+@app.middleware("http")
+async def revalidate_shell(request: Request, call_next):
+    """Hashed assets may be cached forever, index.html must be revalidated so new builds show up."""
+    response = await call_next(request)
+    if not request.url.path.startswith(("/api/", "/assets/")):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+class ProjectBody(BaseModel):
+    wake_word: str | None = None
+    language: str | None = None
+    tts_phrases: list[str] | None = None
+    author: str | None = None
+    website: str | None = None
+
+
+@project_api.get("")
+def list_projects() -> dict:
+    return {"projects": projects.list_projects()}
+
+
+@project_api.post("")
+def create_project(body: ProjectBody) -> dict:
+    with store.LOCK:
+        return projects.create(body.model_dump())
+
+
+@project_api.get("/{slug}")
+def get_project(slug: str) -> dict:
+    return projects.load(projects.project_dir(slug))
+
+
+@project_api.patch("/{slug}")
+def update_project(slug: str, body: ProjectBody) -> dict:
+    with store.LOCK:
+        return projects.update(slug, body.model_dump())
 
 
 class SessionRef(BaseModel):
@@ -60,73 +101,88 @@ class ClipBody(SessionRef):
     clip: str
 
 
-def with_counts(session: dict) -> dict:
-    return {"session": session, "counts": store.sample_counts()}
+def studio_for(slug: str) -> store.Studio:
+    return store.Studio(projects.project_dir(slug))
 
 
-@studio.get("/sessions")
-def sessions() -> dict:
-    return {"sessions": store.list_sessions(), "counts": store.sample_counts()}
+def with_counts(studio: store.Studio, session: dict) -> dict:
+    return {"session": session, "counts": studio.sample_counts()}
 
 
-@studio.post("/upload")
-async def upload(request: Request, x_split_params: str = Header("{}"), x_prefix: str = Header("")) -> dict:
+@studio_api.get("/sessions")
+def sessions(slug: str) -> dict:
+    studio = studio_for(slug)
+    return {"sessions": studio.list_sessions(), "counts": studio.sample_counts()}
+
+
+@studio_api.post("/upload")
+async def upload(slug: str, request: Request, x_split_params: str = Header("{}"), x_prefix: str = Header("")) -> dict:
+    studio = studio_for(slug)
     body = await request.body()
     if len(body) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "upload too large")
     params = store.parse_params(json.loads(x_split_params or "{}"))
     with store.LOCK:
-        return with_counts(store.new_session(body, params, unquote(x_prefix)))
+        result = with_counts(studio, studio.new_session(body, params, unquote(x_prefix)))
+        projects.touch(projects.project_dir(slug))
+        return result
 
 
-@studio.post("/split")
-def split(body: SplitBody) -> dict:
+@studio_api.post("/split")
+def split(slug: str, body: SplitBody) -> dict:
+    studio = studio_for(slug)
     with store.LOCK:
-        return with_counts(store.split(store.session_dir(body.session), store.parse_params(body.params)))
+        return with_counts(studio, studio.split(studio.session_dir(body.session), store.parse_params(body.params)))
 
 
-@studio.post("/rename")
-def rename(body: RenameBody) -> dict:
+@studio_api.post("/rename")
+def rename(slug: str, body: RenameBody) -> dict:
+    studio = studio_for(slug)
     with store.LOCK:
-        return with_counts(store.rename(store.session_dir(body.session), body.prefix))
+        return with_counts(studio, studio.rename(studio.session_dir(body.session), body.prefix))
 
 
-@studio.post("/label")
-def label(body: LabelBody) -> dict:
+@studio_api.post("/label")
+def label(slug: str, body: LabelBody) -> dict:
+    studio = studio_for(slug)
     with store.LOCK:
-        return with_counts(store.label(store.session_dir(body.session), body.clips, body.label))
+        return with_counts(studio, studio.label(studio.session_dir(body.session), body.clips, body.label))
 
 
-@studio.post("/label_unsorted")
-def label_unsorted(body: LabelUnsortedBody) -> dict:
+@studio_api.post("/label_unsorted")
+def label_unsorted(slug: str, body: LabelUnsortedBody) -> dict:
+    studio = studio_for(slug)
     with store.LOCK:
-        return with_counts(store.label_unsorted(store.session_dir(body.session), body.label))
+        return with_counts(studio, studio.label_unsorted(studio.session_dir(body.session), body.label))
 
 
-@studio.post("/delete_clip")
-def delete_clip(body: ClipBody) -> dict:
+@studio_api.post("/delete_clip")
+def delete_clip(slug: str, body: ClipBody) -> dict:
+    studio = studio_for(slug)
     with store.LOCK:
-        return with_counts(store.delete_clip(store.session_dir(body.session), body.clip))
+        return with_counts(studio, studio.delete_clip(studio.session_dir(body.session), body.clip))
 
 
-@studio.post("/delete_session")
-def delete_session(body: SessionRef) -> dict:
+@studio_api.post("/delete_session")
+def delete_session(slug: str, body: SessionRef) -> dict:
+    studio = studio_for(slug)
     with store.LOCK:
-        store.delete_session(store.session_dir(body.session))
-    return {"ok": True, "counts": store.sample_counts()}
+        studio.delete_session(studio.session_dir(body.session))
+    return {"ok": True, "counts": studio.sample_counts()}
 
 
-@studio.get("/files/{session}/recording.wav")
-def recording(session: str) -> FileResponse:
-    return FileResponse(store.session_dir(session) / "recording.wav", media_type="audio/wav")
+@studio_api.get("/files/{session}/recording.wav")
+def recording(slug: str, session: str) -> FileResponse:
+    return FileResponse(studio_for(slug).session_dir(session) / "recording.wav", media_type="audio/wav")
 
 
-@studio.get("/files/{session}/clips/{name}")
-def clip(session: str, name: str) -> FileResponse:
-    return FileResponse(store.clip_path(session, name), media_type="audio/wav")
+@studio_api.get("/files/{session}/clips/{name}")
+def clip(slug: str, session: str, name: str) -> FileResponse:
+    return FileResponse(studio_for(slug).clip_path(session, name), media_type="audio/wav")
 
 
-app.include_router(studio)
+app.include_router(project_api)
+app.include_router(studio_api)
 
 if UI_DIST.is_dir():
     app.mount("/", StaticFiles(directory=UI_DIST, html=True), name="ui")

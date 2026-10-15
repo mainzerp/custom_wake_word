@@ -12,7 +12,22 @@ Goals:
 - Profiles (`fast`, `thorough`).
 - Output: ESPHome-valid manifest (`.json`) + `.tflite`.
 
-Status: early. Web UI with Sample Studio works; pipeline stages are spikes (`spikes/`).
+Status: early. Web UI with projects, setup wizard and Sample Studio works; pipeline stages are spikes (`spikes/`).
+
+## Web UI workflow
+
+Everything is organised per wake word ("project"). The start page lists all projects; "New wake word"
+opens a four-page wizard (name + language, TTS spellings, manifest credits, review). Inside a project
+a step bar guides through the workflow, every step stays clickable and shows its status:
+
+1. Wake word: settings (name, language, TTS spellings, author, website)
+2. Synthetic samples (Piper TTS) - planned, milestone 1
+3. Own recordings: Sample Studio (optional, recommended)
+4. Training - planned, milestone 1
+5. Mining - planned, milestone 2 (optional)
+6. Export (ESPHome manifest + `.tflite`) - planned, milestone 1
+
+Opening a project jumps to the next open step.
 
 ## Layout
 
@@ -22,7 +37,7 @@ Status: early. Web UI with Sample Studio works; pipeline stages are spikes (`spi
 | `docker/requirements-*.in` | Direct dependencies (exact pins) |
 | `docker/requirements-*.txt` | Fully resolved lock files (generated, see below) |
 | `spikes/` | Throwaway experiments with measurements |
-| `trainer/` | Python package: pipeline (WIP), Sample Studio storage (`trainer/studio/`), FastAPI server (`trainer/server/`) |
+| `trainer/` | Python package: projects (`trainer/projects.py`), Sample Studio storage (`trainer/studio/`), FastAPI server (`trainer/server/`), pipeline (WIP) |
 | `ui/` | Web UI "Wakeforge" (Vite + Svelte 5 + TypeScript) |
 | `data/` | All datasets, caches, models and runs. Git-ignored, bind-mounted to `/app/data` |
 
@@ -30,9 +45,15 @@ Data layout below `data/`:
 
 | Path | Content |
 |---|---|
-| `recordings/<YYYYMMDD-HHMMSS>/` | Sample Studio takes: `recording.wav`, `clips/`, `clips.json`, `session.json` |
-| `samples/positive/`, `samples/negative/` | Sorted real clips (16 kHz mono PCM16). A clip's label is the folder holding its copy |
-| `datasets/` | Negative feature sets and augmentation audio copied from the old trainer volume |
+| `projects/<slug>/project.json` | Project settings: `wake_word`, `language`, `tts_phrases`, `author`, `website` |
+| `projects/<slug>/recordings/<YYYYMMDD-HHMMSS>/` | Sample Studio takes: `recording.wav`, `clips/`, `clips.json`, `session.json` |
+| `projects/<slug>/samples/positive/`, `.../negative/` | Sorted real clips (16 kHz mono PCM16). A clip's label is the folder holding its copy |
+| `projects/<slug>/generated/`, `runs/`, `models/` | Synthetic positives, training runs, exported models (planned) |
+| `datasets/` | Shared negative feature sets and augmentation audio copied from the old trainer volume |
+| `models/piper/` | Shared Piper voices (incl. the batched-`sid` ONNX patch) |
+
+`python -m trainer.projects list` shows all projects. `python -m trainer.projects migrate --wake-word X`
+moves a pre-project `data/recordings` + `data/samples` layout into a new project (already done for Dscharwis).
 
 ## Usage
 

@@ -1,10 +1,20 @@
-import type { Counts } from "./types";
+import type { Counts, Project } from "./types";
 
-export const counts = $state<Counts>({ positive: 0, negative: 0 });
+export const app = $state<{ project: Project | null }>({ project: null });
+
+export function setProject(p: Project | null) {
+  app.project = p;
+}
 
 export function setCounts(c: Counts) {
-  counts.positive = c.positive;
-  counts.negative = c.negative;
+  if (!app.project) return;
+  app.project.summary.positive = c.positive;
+  app.project.summary.negative = c.negative;
+}
+
+export function slug(): string {
+  if (!app.project) throw new Error("no project selected");
+  return app.project.slug;
 }
 
 export type Toast = { id: number; text: string; kind: "info" | "error" };
