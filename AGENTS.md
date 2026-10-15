@@ -12,6 +12,8 @@
 - GPU code must fail hard when CUDA is unavailable (never silently fall back to CPU).
 - Image rebuilds take ~10 min (layer export of ~16 GB). For quick experiments, install extra pinned
   packages into the running container and add them to `docker/requirements-*.in` for the next build.
+- Docker Desktop's disk lives on F: (`F:\DockerVolumes\DockerDesktopWSL`, set via `CustomWslDistroDir`
+  in `%APPDATA%\Docker\settings-store.json`). The GUI move fails (robocopy exit 1 treated as error).
 - Old trainer volume is `wake-word_mww-data` (not `mww-data`); mount it read-only only.
 - Dependency policy: exact pins, released >= 7 days ago. Regenerate lock files with
   `uv pip compile ... --exclude-newer <today-7d>` (see README).
