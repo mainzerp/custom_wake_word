@@ -4,9 +4,9 @@
 - Host: Windows 11, Docker Desktop (WSL2), RTX 3090, driver 591.86 (CUDA 13 capable).
   Everything large goes to `data/` (git-ignored) on F:.
 - Run pipeline code inside the container: `docker compose up -d --build`, then
-  `docker exec cww-trainer py-train ...` (TF/microWakeWord), `py-omni ...` (OmniVoice TTS + CTC check,
-  PyTorch) or `py-tts ...` (Piper, spikes only). Always use these launchers: they set LD_LIBRARY_PATH to
-  the venv's CUDA pip libs. The venvs need different CUDA majors (12 vs 13), so never share LD_LIBRARY_PATH.
+  `docker exec cww-trainer py-train ...` (TF/microWakeWord) or `py-omni ...` (OmniVoice TTS + CTC check,
+  PyTorch). Always use these launchers: they set LD_LIBRARY_PATH to the venv's CUDA pip libs. The venvs
+  need different CUDA majors (12 vs 13), so never share LD_LIBRARY_PATH. The Piper venv was dropped.
 - German TTS: Piper (all voices incl. MLS) is unusable for wake words; OmniVoice voice cloning won Spike B
   (`spikes/ttsb/`, results in README). Voice bank in `data/voices/<lang>/` (`py-omni -m trainer.tts.voices build`).
   Phonetic check of generated clips: wav2vec2 CTC + `trainer/tts/match.py` (Whisper is ~75x slower on short
@@ -42,5 +42,4 @@
 - Playwright MCP may only write screenshots below `C:\Users\patric` (e.g. `~/.playwright-mcp/`).
 - Reference implementation (old trainer): container `mww-trainer`, volume `mww-data`,
   repo `F:\Github\wake-word` (published models in `models/`, Sample Studio in `tools/`).
-- Quick local CPU check without Docker:
-  `uv run --no-project --python 3.12 --with piper-tts==1.8.0 --with onnx==1.19.1 --with soundfile==0.14.0 --with scipy==1.18.1 --with numpy==2.5.3 python spikes/piper_throughput.py --cpu --count 100`
+

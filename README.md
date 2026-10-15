@@ -38,7 +38,7 @@ Opening a project jumps to the next open step.
 
 | Path | Purpose |
 |---|---|
-| `docker/Dockerfile` | Image with three venvs: `/opt/venv-train` (TF 2.21 + microWakeWord, CUDA 12 pip libs), `/opt/venv-omni` (OmniVoice + PyTorch, CUDA 13 pip libs) and `/opt/venv-tts` (Piper + onnxruntime-gpu, only used by spikes now) |
+| `docker/Dockerfile` | Image with two venvs: `/opt/venv-train` (TF 2.21 + microWakeWord, CUDA 12 pip libs) and `/opt/venv-omni` (OmniVoice + wav2vec2 check, PyTorch, CUDA 13 pip libs) |
 | `docker/requirements-*.in` | Direct dependencies (exact pins) |
 | `docker/requirements-*.txt` | Fully resolved lock files (generated, see below) |
 | `spikes/` | Throwaway experiments with measurements |
@@ -81,7 +81,7 @@ Shell into the container:
 docker exec -it cww-trainer bash
 ```
 
-Inside the container, use the launchers `py-omni` (OmniVoice venv), `py-train` (TF venv) and `py-tts` (Piper venv):
+Inside the container, use the launchers `py-omni` (OmniVoice venv) and `py-train` (TF venv):
 
 ```sh
 py-omni -m trainer.tts.voices build --language de --max 300     # voice bank, once per language
@@ -138,14 +138,15 @@ Pin exact versions released at least 7 days ago. Lock files are generated with a
 ```sh
 uv pip compile docker/requirements-train.in -o docker/requirements-train.txt \
   --python-version 3.12 --python-platform x86_64-manylinux_2_28 --exclude-newer YYYY-MM-DD
-uv pip compile docker/requirements-tts.in -o docker/requirements-tts.txt \
+uv pip compile docker/requirements-omni.in -o docker/requirements-omni.txt \
   --python-version 3.12 --python-platform x86_64-manylinux_2_28 --exclude-newer YYYY-MM-DD
 ```
 
 ## Notes
 
-- The CUDA pip libs are not found automatically, neither by TF (`libcusolver.so.11`) nor by
-  onnxruntime-gpu (`libcublasLt.so.13`). The `py-train`/`py-tts` launchers set `LD_LIBRARY_PATH` per venv.
+- The CUDA pip libs are not found automatically by TF (`libcusolver.so.11`; onnxruntime-gpu had the same
+  issue with `libcublasLt.so.13`). The `py-train`/`py-omni` launchers set `LD_LIBRARY_PATH` per venv.
+- The Piper venv (`py-tts`) left the image after Spike B; the Piper spikes need the image of commit eb63b98.
 - microWakeWord's `audio/` and `layers/` have no `__init__.py`, so a plain pip install drops them;
   the Dockerfile clones the pinned commit and adds them. TensorBoard is required for `tf.summary`.
 - Piper MLS speakers read slowly: at `length_scale=1` "Dscharwis" takes ~1.4 s (median) and

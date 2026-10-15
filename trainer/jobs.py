@@ -97,8 +97,9 @@ def start(project: Path, kind: str, command: list[str], params: dict) -> dict:
     job_dir.mkdir(parents=True)
     command = [*command, "--job", str(job_dir)]
     with open(job_dir / "log.txt", "wb") as log:
+        env = {**os.environ, "TQDM_DISABLE": "1", "HF_HUB_DISABLE_PROGRESS_BARS": "1", "PYTHONWARNINGS": "ignore"}
         proc = subprocess.Popen(command, cwd=REPO_ROOT, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                start_new_session=True)
+                                start_new_session=True, env=env)
     job = {"kind": kind, "command": command, "params": params, "pid": proc.pid,
            "started": datetime.now().isoformat(timespec="seconds")}
     (job_dir / "job.json").write_text(json.dumps(job, indent=2), encoding="utf-8")

@@ -1,6 +1,7 @@
 # Two isolated venvs in one image:
 #   /opt/venv-train : TensorFlow 2.21 + microWakeWord (CUDA 12 pip libs)
-#   /opt/venv-tts   : Piper + onnxruntime-gpu (CUDA 13 pip libs)
+#   /opt/venv-omni  : OmniVoice + wav2vec2 phonetic check, PyTorch (CUDA 13 pip libs)
+# (The Piper venv /opt/venv-tts was dropped after Spike B; see commit eb63b98 for the last image with it.)
 # GPU driver comes from the host (WSL2 /dev/dxg), CUDA runtimes come from pip wheels.
 FROM python:3.12.14-slim-bookworm
 
@@ -26,23 +27,13 @@ RUN git clone https://github.com/kahrendt/microWakeWord /opt/microWakeWord \
     && touch /opt/microWakeWord/microwakeword/audio/__init__.py /opt/microWakeWord/microwakeword/layers/__init__.py \
     && uv pip install --python /opt/venv-train/bin/python --no-cache --no-deps /opt/microWakeWord
 
-COPY docker/requirements-tts.txt /tmp/requirements-tts.txt
-# piper-tts pulls the CPU onnxruntime, which shadows onnxruntime-gpu (same module name).
-RUN uv venv /opt/venv-tts --python /usr/local/bin/python3.12 \
-    && uv pip install --python /opt/venv-tts/bin/python --no-cache -r /tmp/requirements-tts.txt \
-    && uv pip uninstall --python /opt/venv-tts/bin/python onnxruntime onnxruntime-gpu \
-    && uv pip install --python /opt/venv-tts/bin/python --no-cache --no-deps \
-       "$(grep -E '^onnxruntime-gpu==' /tmp/requirements-tts.txt)"
-
-# OmniVoice (voice-cloning TTS for synthetic positives) + Whisper filter, PyTorch with CUDA 13 pip libs.
 COPY docker/requirements-omni.txt /tmp/requirements-omni.txt
 RUN uv venv /opt/venv-omni --python /usr/local/bin/python3.12 \
     && uv pip install --python /opt/venv-omni/bin/python --no-cache -r /tmp/requirements-omni.txt
 
 # Per-venv launchers. TF does not find all CUDA 12 pip libs (e.g. libcusolver) by itself,
-# but LD_LIBRARY_PATH must not leak into the TTS venv (both ship libcudnn.so.9).
-# onnxruntime-gpu likewise does not find the CUDA 13 pip libs (libcublasLt.so.13).
-RUN for v in train tts omni; do \
+# but LD_LIBRARY_PATH must not leak into the other venv (both ship libcudnn.so.9).
+RUN for v in train omni; do \
         printf '#!/bin/sh\nexport LD_LIBRARY_PATH="%s${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\nexec /opt/venv-%s/bin/python "$@"\n' \
             "$(ls -d /opt/venv-$v/lib/python3.12/site-packages/nvidia/*/lib | tr '\n' ':' | sed 's/:$//')" "$v" \
             > /usr/local/bin/py-$v \
