@@ -1,7 +1,7 @@
 """Synthetic wake word positives with OmniVoice voice cloning (runs in the OmniVoice venv).
 
   py-omni -m trainer.tts.omni run --project data/projects/x --job <job dir> --count 20000
-  py-omni -m trainer.tts.omni preview --project data/projects/x --phrase Jarvis --out <dir>
+  py-omni -m trainer.tts.omni preview --language de --phrases Jarvis Dscharwis --out <dir>
 
 Every clip clones a random reference voice from the bank (data/voices/<language>/) or, for --design-share of the
 batches, a voice designed from speaker attributes. Tempo and punctuation vary per clip. A character CTC model
@@ -244,30 +244,37 @@ def run(args: argparse.Namespace) -> None:
 
 
 def preview(args: argparse.Namespace) -> None:
-    project = load_project(Path(args.project))
-    synth = Synth(project["language"], args.steps, True)
+    """--n clips per phrase in one batch, alternating male/female bank voices (designed voices without a bank)."""
+    synth = Synth(args.language, args.steps, True)
     rng = random.Random()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    n_design = 2 if synth.bank else args.n
-    bank_picks = rng.sample(range(len(synth.bank)), min(args.n - n_design, len(synth.bank)))
-    designs = rng.sample(design_voices(), n_design)
-    labels, clips = [], []
-    if bank_picks:
-        speeds = [round(rng.uniform(*args.speed), 2) for _ in bank_picks]
-        clips += synth.generate([args.phrase] * len(bank_picks), speeds, prompts=[synth.prompts[i] for i in bank_picks])
-        labels += [(synth.bank[i]["id"], s) for i, s in zip(bank_picks, speeds)]
-    speeds = [round(rng.uniform(*args.speed), 2) for _ in designs]
-    clips += synth.generate([args.phrase] * len(designs), speeds, instructs=designs)
-    labels += [(d, s) for d, s in zip(designs, speeds)]
+    by_gender = {g: [i for i, v in enumerate(synth.bank) if v.get("gender") == g] for g in ("m", "f")}
+    designs = design_voices()
+    texts, speeds, prompts, instructs, labels = [], [], [], [], []
+    for phrase in args.phrases:
+        for k in range(args.n):
+            pool = by_gender["m" if k % 2 == 0 else "f"] or list(range(len(synth.bank)))
+            texts.append(phrase)
+            speeds.append(round(rng.uniform(*args.speed), 2))
+            if pool:
+                i = rng.choice(pool)
+                prompts.append(synth.prompts[i])
+                labels.append((phrase, synth.bank[i]["id"]))
+            else:
+                d = rng.choice(designs)
+                instructs.append(d)
+                labels.append((phrase, d))
+    clips = synth.generate(texts, speeds, prompts=prompts or None, instructs=instructs or None)
     transcripts = synth.transcribe(clips)
     result = []
-    for i, ((voice, speed), clip, text) in enumerate(zip(labels, clips, transcripts)):
+    for i, ((phrase, voice), speed, clip, text) in enumerate(zip(labels, speeds, clips, transcripts)):
         if not clip.size:
             continue
         sf.write(out / f"{i}.wav", clip / np.abs(clip).max() * 0.9, corpus.SAMPLE_RATE, subtype="PCM_16")
-        result.append({"file": f"{i}.wav", "voice": voice, "speed": speed, "seconds": round(len(clip) / corpus.SAMPLE_RATE, 2),
-                       "transcript": text, "hit": contains_wake_word(text, project["phrases"] + [args.phrase])})
+        result.append({"file": f"{i}.wav", "phrase": phrase, "voice": voice, "speed": speed,
+                       "seconds": round(len(clip) / corpus.SAMPLE_RATE, 2), "transcript": text,
+                       "hit": contains_wake_word(text, args.phrases) if synth.asr is not None else None})
     print(json.dumps({"engine": ENGINE, "clips": result}))
 
 
@@ -276,10 +283,10 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("run", "preview"):
         p = sub.add_parser(name)
-        p.add_argument("--project", required=True)
         p.add_argument("--steps", type=int, default=16)
         p.add_argument("--speed", type=float, nargs=2, default=[0.85, 1.2])
     r = sub.choices["run"]
+    r.add_argument("--project", required=True)
     r.add_argument("--job", type=Path, required=True)
     r.add_argument("--count", type=int, required=True)
     r.add_argument("--batch", type=int, default=32)
@@ -288,9 +295,10 @@ def main() -> None:
     r.add_argument("--min-seconds", type=float, default=0.3)
     r.add_argument("--max-seconds", type=float, default=2.0)
     pv = sub.choices["preview"]
-    pv.add_argument("--phrase", required=True)
+    pv.add_argument("--language", required=True)
+    pv.add_argument("--phrases", nargs="+", required=True)
     pv.add_argument("--out", required=True)
-    pv.add_argument("--n", type=int, default=8)
+    pv.add_argument("--n", type=int, default=2, help="clips per phrase")
     args = parser.parse_args()
     if args.command == "preview":
         preview(args)

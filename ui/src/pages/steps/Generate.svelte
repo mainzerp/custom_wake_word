@@ -23,8 +23,6 @@
   let advanced = $state(false);
   let showLog = $state(false);
   let busy = $state(false);
-  let previews = $state<Record<string, GenClip[]>>({});
-  let previewing = $state<string | null>(null);
   let samples = $state<GenClip[]>([]);
 
   const job = $derived(status?.job ?? null);
@@ -92,19 +90,6 @@
       samples = [];
       if (app.project) app.project.summary.generated = 0;
       toast("Synthetic corpus deleted.");
-    }
-  }
-
-  async function preview(phrase: string) {
-    previewing = phrase;
-    try {
-      const res = await generate.preview(phrase, $state.snapshot(params.speed), params.steps);
-      const t = Date.now();
-      previews[phrase] = res.clips.map((c) => ({ ...c, url: `${c.url}?t=${t}` }));
-    } catch (e) {
-      toastError(e);
-    } finally {
-      previewing = null;
     }
   }
 
@@ -213,6 +198,10 @@
       {#if phrasesChanged}
         <p class="hint warn">New spellings were added since the last run; they are used for newly generated clips only.</p>
       {/if}
+      <p class="hint faint">
+        Spellings: {project.tts_phrases.join(", ")} ·
+        <a class="small-link" href={href.project(project.slug, "wakeword")}>check pronunciation in step 1</a>
+      </p>
     </section>
 
     <section class="panel progress">
@@ -259,37 +248,6 @@
       {/if}
     </section>
   </div>
-
-  <section class="panel block">
-    <div class="head">
-      <div>
-        <span class="eyebrow">Pronunciation check</span>
-        <p class="dim sub">
-          Six cloned and two designed voices per spelling, with the phonetic transcript. Pink = would be dropped.
-          Takes about 40 s (models load per preview).
-        </p>
-      </div>
-      <a class="small-link" href={href.project(project.slug, "wakeword")}>Edit spellings</a>
-    </div>
-    {#each project.tts_phrases as phrase (phrase)}
-      <div class="phrase">
-        <div class="phrase-head">
-          <strong>{phrase}</strong>
-          <button class="small" onclick={() => preview(phrase)} disabled={!!previewing || running || !!otherJob}>
-            <Icon name={previewing === phrase ? "replay" : "play"} size={14} />
-            {previewing === phrase ? "Synthesizing…" : previews[phrase] ? "New voices" : "Preview"}
-          </button>
-        </div>
-        {#if previews[phrase]}
-          <div class="grid">
-            {#each previews[phrase] as c (c.url)}
-              <MiniClip url={c.url} label={voiceLabel(c.voice)} detail="{c.seconds}s · ×{c.speed}" note={c.transcript} miss={!c.hit} />
-            {/each}
-          </div>
-        {/if}
-      </div>
-    {/each}
-  </section>
 
   {#if total}
     <section class="panel block">
@@ -502,27 +460,6 @@
     color: var(--cyan);
     font-size: 13px;
     text-decoration: none;
-  }
-  .phrase {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding-top: 12px;
-    border-top: 1px solid var(--line);
-  }
-  .phrase-head {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-  .phrase-head strong {
-    font-family: var(--font-display);
-    font-weight: 600;
-  }
-  .phrase-head button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
   }
   .grid {
     display: grid;

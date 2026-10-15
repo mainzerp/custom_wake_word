@@ -8,7 +8,6 @@ import type {
   Label,
   Project,
   ProjectSettings,
-  Range,
   Session,
   SplitParams,
 } from "./types";
@@ -39,9 +38,12 @@ export const generate = {
   status: () => request<GenerateStatus>(`${projectBase()}/generate`),
   start: (params: GenerateParams) => post<Job>(`${projectBase()}/generate/start`, params),
   reset: () => post<GenerateStatus>(`${projectBase()}/generate/reset`, {}),
-  preview: (phrase: string, speed: Range, steps: number) =>
-    post<{ engine: string; clips: GenClip[] }>(`${projectBase()}/generate/preview`, { phrase, speed, steps }),
   samples: (n = 12) => request<{ clips: GenClip[] }>(`${projectBase()}/generate/samples?n=${n}`),
+};
+
+export const tts = {
+  preview: (language: string, phrases: string[], n = 2) =>
+    post<{ engine: string; clips: GenClip[] }>("/api/tts/preview", { language, phrases, n }),
 };
 
 export const jobs = {

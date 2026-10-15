@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import Icon from "../../components/Icon.svelte";
   import ProjectFields from "../../components/project/ProjectFields.svelte";
+  import PronunciationCheck from "../../components/project/PronunciationCheck.svelte";
   import { projects } from "../../lib/api";
   import { app, setProject, toast, toastError } from "../../lib/state.svelte";
   import type { Project, ProjectSettings } from "../../lib/types";
@@ -40,6 +41,7 @@
     <ProjectFields bind:settings sections={["name"]} />
     <hr />
     <ProjectFields bind:settings sections={["phrases"]} />
+    <PronunciationCheck language={settings.language} phrases={settings.tts_phrases} />
     <hr />
     <ProjectFields bind:settings sections={["manifest"]} />
     <div class="actions">

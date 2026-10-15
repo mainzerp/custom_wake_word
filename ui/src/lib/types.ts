@@ -104,7 +104,7 @@ export interface GenClip {
   phrase?: string | null;
   scales?: number[];
   transcript?: string;
-  hit?: boolean;
+  hit?: boolean | null;
 }
 
 export const LANGUAGES: Record<string, string> = {

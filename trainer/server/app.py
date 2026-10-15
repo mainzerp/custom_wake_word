@@ -202,6 +202,7 @@ def stop_job(slug: str, job_id: str) -> dict:
 app.include_router(project_api)
 app.include_router(studio_api)
 app.include_router(generate_api.router)
+app.include_router(generate_api.tts_router)
 
 if UI_DIST.is_dir():
     app.mount("/", StaticFiles(directory=UI_DIST, html=True), name="ui")

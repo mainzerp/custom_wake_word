@@ -6,6 +6,7 @@ import hashlib
 import json
 import shutil
 import subprocess
+import time
 
 import numpy as np
 from fastapi import APIRouter
@@ -13,11 +14,15 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, model_validator
 
 from trainer import jobs, projects
+from trainer.paths import DATA
 from trainer.tts import corpus
 from trainer.tts.voices import load_bank
 
 router = APIRouter(prefix="/api/projects/{slug}/generate")
+tts_router = APIRouter(prefix="/api/tts")
 PREVIEW_TIMEOUT_S = 300
+PREVIEWS = DATA / "cache" / "preview"
+KEEP_PREVIEWS = 20
 ENGINE = {"name": "OmniVoice", "model": "k2-fsa/OmniVoice", "license": "CC-BY-NC 4.0 weights"}
 
 
@@ -43,9 +48,18 @@ class GenerateBody(BaseModel):
 
 
 class PreviewBody(BaseModel):
-    phrase: str = Field(min_length=1, max_length=60)
+    language: str = Field(pattern=r"^[a-z]{2}$")
+    phrases: list[str] = Field(min_length=1, max_length=8)
+    n: int = Field(default=2, ge=1, le=6)
     speed: Range = Range(lo=0.85, hi=1.2)
     steps: int = Field(default=16, ge=8, le=64)
+
+    @model_validator(mode="after")
+    def clean(self) -> "PreviewBody":
+        self.phrases = list(dict.fromkeys(p.strip() for p in self.phrases if p.strip()))
+        if not self.phrases or any(len(p) > 60 for p in self.phrases):
+            raise ValueError("phrases must be 1-60 characters")
+        return self
 
 
 def py_omni() -> str:
@@ -55,8 +69,8 @@ def py_omni() -> str:
     return exe
 
 
-def preview_key(phrase: str) -> str:
-    return hashlib.sha1(phrase.encode()).hexdigest()[:12]
+def preview_key(body: PreviewBody) -> str:
+    return hashlib.sha1(json.dumps([body.language, body.phrases, time.time()]).encode()).hexdigest()[:12]
 
 
 @router.get("")
@@ -93,32 +107,35 @@ def reset(slug: str) -> dict:
     return status(slug)
 
 
-@router.post("/preview")
-def preview(slug: str, body: PreviewBody) -> dict:
-    path = projects.project_dir(slug)
+@tts_router.post("/preview")
+def preview(body: PreviewBody) -> dict:
+    """Pronunciation check without a project: n clips per spelling plus the phonetic transcript."""
     running = jobs.active()
     if running:
-        raise ValueError(f"the GPU is busy with a {running['kind']} job; preview after it finished")
-    key = preview_key(body.phrase)
-    out = path / "generated" / "preview" / key
-    shutil.rmtree(out, ignore_errors=True)
-    cmd = [py_omni(), "-m", "trainer.tts.omni", "preview", "--project", str(path), "--phrase", body.phrase,
-           "--out", str(out), "--speed", str(body.speed.lo), str(body.speed.hi), "--steps", str(body.steps)]
+        raise ValueError(f"the GPU is busy with a {running['kind']} job; check the pronunciation after it finished")
+    PREVIEWS.mkdir(parents=True, exist_ok=True)
+    for old in sorted(PREVIEWS.iterdir(), key=lambda p: p.stat().st_mtime)[:-KEEP_PREVIEWS]:
+        shutil.rmtree(old, ignore_errors=True)
+    key = preview_key(body)
+    out = PREVIEWS / key
+    cmd = [py_omni(), "-m", "trainer.tts.omni", "preview", "--language", body.language, "--phrases", *body.phrases,
+           "--n", str(body.n), "--out", str(out), "--speed", str(body.speed.lo), str(body.speed.hi),
+           "--steps", str(body.steps)]
     res = subprocess.run(cmd, capture_output=True, text=True, timeout=PREVIEW_TIMEOUT_S)
     if res.returncode:
         lines = [line for line in res.stderr.strip().splitlines() if line.strip()]
         raise ValueError(f"preview failed: {lines[-1] if lines else res.returncode}")
     result = json.loads(res.stdout.strip().splitlines()[-1])
     for clip in result["clips"]:
-        clip["url"] = f"/api/projects/{slug}/generate/preview/{key}/{clip.pop('file')}"
+        clip["url"] = f"/api/tts/preview/{key}/{clip.pop('file')}"
     return result
 
 
-@router.get("/preview/{key}/{name}")
-def preview_file(slug: str, key: str, name: str) -> FileResponse:
+@tts_router.get("/preview/{key}/{name}")
+def preview_file(key: str, name: str) -> FileResponse:
     if not (key.isalnum() and name.removesuffix(".wav").isdigit()):
         raise ValueError("invalid preview file")
-    path = projects.project_dir(slug) / "generated" / "preview" / key / name
+    path = PREVIEWS / key / name
     if not path.is_file():
         raise FileNotFoundError("preview not found")
     return FileResponse(path, media_type="audio/wav", headers={"Cache-Control": "no-store"})

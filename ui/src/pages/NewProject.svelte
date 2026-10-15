@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from "../components/Icon.svelte";
   import ProjectFields from "../components/project/ProjectFields.svelte";
+  import PronunciationCheck from "../components/project/PronunciationCheck.svelte";
   import { projects } from "../lib/api";
   import { go, href } from "../lib/router.svelte";
   import { STEPS, nextStep } from "../lib/steps";
@@ -93,6 +94,9 @@
         </ol>
       {:else}
         <ProjectFields bind:settings sections={[current.id]} hero={current.id === "name"} />
+        {#if current.id === "phrases"}
+          <PronunciationCheck language={settings.language} phrases={settings.tts_phrases} />
+        {/if}
       {/if}
     </div>
 
