@@ -1,4 +1,4 @@
-"""API for the "Synthetic samples" step: Piper corpus status, generation job, previews and listening."""
+"""API for the "Synthetic samples" step: OmniVoice corpus status, generation job, previews and listening."""
 
 from __future__ import annotations
 
@@ -14,10 +14,11 @@ from pydantic import BaseModel, Field, model_validator
 
 from trainer import jobs, projects
 from trainer.tts import corpus
-from trainer.tts.catalog import voice_for
+from trainer.tts.voices import load_bank
 
 router = APIRouter(prefix="/api/projects/{slug}/generate")
-PREVIEW_TIMEOUT_S = 180
+PREVIEW_TIMEOUT_S = 300
+ENGINE = {"name": "OmniVoice", "model": "k2-fsa/OmniVoice", "license": "CC-BY-NC 4.0 weights"}
 
 
 class Range(BaseModel):
@@ -28,33 +29,29 @@ class Range(BaseModel):
     def ordered(self) -> "Range":
         if self.lo > self.hi:
             raise ValueError("range minimum is larger than maximum")
+        if self.lo < 0.5 or self.hi > 2.0:
+            raise ValueError("speed must stay within 0.5..2.0")
         return self
 
 
 class GenerateBody(BaseModel):
     count: int = Field(ge=100, le=500_000)
-    length_scale: Range = Range(lo=0.55, hi=1.0)
-    noise_scale: Range = Range(lo=0.3, hi=0.8)
-    noise_w: Range = Range(lo=0.2, hi=0.5)
-
-    @model_validator(mode="after")
-    def bounds(self) -> "GenerateBody":
-        for name, lo, hi in (("length_scale", 0.3, 2.0), ("noise_scale", 0.0, 1.5), ("noise_w", 0.0, 1.5)):
-            r = getattr(self, name)
-            if r.lo < lo or r.hi > hi:
-                raise ValueError(f"{name} must stay within {lo}..{hi}")
-        return self
+    speed: Range = Range(lo=0.85, hi=1.2)
+    steps: int = Field(default=16, ge=8, le=64)
+    design_share: float = Field(default=0.15, ge=0.0, le=1.0)
+    filter: bool = True
 
 
 class PreviewBody(BaseModel):
     phrase: str = Field(min_length=1, max_length=60)
-    length_scale: Range = Range(lo=0.55, hi=1.0)
+    speed: Range = Range(lo=0.85, hi=1.2)
+    steps: int = Field(default=16, ge=8, le=64)
 
 
-def py_tts() -> str:
-    exe = shutil.which("py-tts")
+def py_omni() -> str:
+    exe = shutil.which("py-omni")
     if not exe:
-        raise ValueError("py-tts launcher not found: generation only runs inside the container")
+        raise ValueError("py-omni launcher not found: generation only runs inside the container")
     return exe
 
 
@@ -68,7 +65,7 @@ def status(slug: str) -> dict:
     project = projects.load(path)
     index = corpus.load_index(corpus.corpus_dir(path))
     return {
-        "voice": voice_for(project["language"]),
+        "engine": {**ENGINE, "voices": len(load_bank(project["language"]))},
         "corpus": {k: index[k] for k in ("voice", "phrases", "total", "seconds")} | {"shards": len(index["shards"])},
         "job": jobs.latest(path, "generate"),
         "active": jobs.active(),
@@ -78,12 +75,11 @@ def status(slug: str) -> dict:
 @router.post("/start")
 def start(slug: str, body: GenerateBody) -> dict:
     path = projects.project_dir(slug)
-    if not voice_for(projects.load(path)["language"]):
-        raise ValueError("no multi-speaker voice for this language yet")
-    cmd = [py_tts(), "-m", "trainer.tts.generate", "run", "--project", str(path), "--count", str(body.count)]
-    for name in ("length_scale", "noise_scale", "noise_w"):
-        r = getattr(body, name)
-        cmd += [f"--{name.replace('_', '-')}", str(r.lo), str(r.hi)]
+    cmd = [py_omni(), "-m", "trainer.tts.omni", "run", "--project", str(path), "--count", str(body.count),
+           "--speed", str(body.speed.lo), str(body.speed.hi), "--steps", str(body.steps),
+           "--design-share", str(body.design_share)]
+    if not body.filter:
+        cmd.append("--no-filter")
     return jobs.start(path, "generate", cmd, body.model_dump())
 
 
@@ -100,14 +96,18 @@ def reset(slug: str) -> dict:
 @router.post("/preview")
 def preview(slug: str, body: PreviewBody) -> dict:
     path = projects.project_dir(slug)
+    running = jobs.active()
+    if running:
+        raise ValueError(f"the GPU is busy with a {running['kind']} job; preview after it finished")
     key = preview_key(body.phrase)
     out = path / "generated" / "preview" / key
     shutil.rmtree(out, ignore_errors=True)
-    cmd = [py_tts(), "-m", "trainer.tts.generate", "preview", "--project", str(path), "--phrase", body.phrase,
-           "--out", str(out), "--length-scale", str(body.length_scale.lo), str(body.length_scale.hi)]
+    cmd = [py_omni(), "-m", "trainer.tts.omni", "preview", "--project", str(path), "--phrase", body.phrase,
+           "--out", str(out), "--speed", str(body.speed.lo), str(body.speed.hi), "--steps", str(body.steps)]
     res = subprocess.run(cmd, capture_output=True, text=True, timeout=PREVIEW_TIMEOUT_S)
     if res.returncode:
-        raise ValueError(f"preview failed: {res.stderr.strip().splitlines()[-1] if res.stderr.strip() else res.returncode}")
+        lines = [line for line in res.stderr.strip().splitlines() if line.strip()]
+        raise ValueError(f"preview failed: {lines[-1] if lines else res.returncode}")
     result = json.loads(res.stdout.strip().splitlines()[-1])
     for clip in result["clips"]:
         clip["url"] = f"/api/projects/{slug}/generate/preview/{key}/{clip.pop('file')}"

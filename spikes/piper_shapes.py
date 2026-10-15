@@ -1,6 +1,7 @@
 """Piper on CUDA: per-batch latency with varying output shapes under different CUDA EP options.
 
   docker exec -e PYTHONPATH=/app cww-trainer py-tts spikes/piper_shapes.py
+  (needs trainer/tts/generate.py from commit 942b8f3; the Piper engine was removed after Spike B)
 
 Result (RTX 3090, 3840 clips "Dscharwis", random scales):
   heuristic b128               first third  285/s  rest    4/s  max 261.67s  total 6/s

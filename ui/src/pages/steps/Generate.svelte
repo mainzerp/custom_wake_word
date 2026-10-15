@@ -10,12 +10,13 @@
   let { project }: { project: Project } = $props();
 
   const DEFAULTS: GenerateParams = {
-    count: 50000,
-    length_scale: { lo: 0.55, hi: 1.0 },
-    noise_scale: { lo: 0.3, hi: 0.8 },
-    noise_w: { lo: 0.2, hi: 0.5 },
+    count: 20000,
+    speed: { lo: 0.85, hi: 1.2 },
+    steps: 16,
+    design_share: 0.15,
+    filter: true,
   };
-  const PRESETS = [10000, 25000, 50000, 100000];
+  const PRESETS = [5000, 10000, 20000, 50000];
 
   let status = $state<GenerateStatus | null>(null);
   let params = $state<GenerateParams>(structuredClone(DEFAULTS));
@@ -40,7 +41,7 @@
     try {
       const wasRunning = running;
       const s = await generate.status();
-      if (!status && s.job?.params?.count) params = { ...structuredClone(DEFAULTS), ...s.job.params } as GenerateParams;
+      if (!status && s.job?.params?.speed) params = { ...structuredClone(DEFAULTS), ...s.job.params } as GenerateParams;
       status = s;
       if (app.project?.slug === project.slug) app.project.summary.generated = s.corpus.total;
       if (wasRunning && s.job && !s.job.alive) {
@@ -97,7 +98,7 @@
   async function preview(phrase: string) {
     previewing = phrase;
     try {
-      const res = await generate.preview(phrase, $state.snapshot(params.length_scale));
+      const res = await generate.preview(phrase, $state.snapshot(params.speed), params.steps);
       const t = Date.now();
       previews[phrase] = res.clips.map((c) => ({ ...c, url: `${c.url}?t=${t}` }));
     } catch (e) {
@@ -115,6 +116,12 @@
   const fmtEta = (s: number | null | undefined) =>
     s == null ? "–" : s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
   const hours = (s: number) => (s / 3600).toFixed(1);
+  const voiceLabel = (v: string) => v.replace(/^(bank|design):/, "");
+  const filterRate = $derived(
+    job && (job.done ?? 0) - (job.start ?? 0) + (job.filtered ?? 0) > 0
+      ? Math.round(((job.filtered ?? 0) / ((job.done ?? 0) - (job.start ?? 0) + (job.filtered ?? 0))) * 100)
+      : null,
+  );
   const startLabel = $derived(
     total >= params.count ? "Target reached" : total ? `Continue to ${params.count.toLocaleString()}` : `Generate ${params.count.toLocaleString()} clips`,
   );
@@ -124,21 +131,21 @@
   });
 </script>
 
-{#if status && !status.voice}
-  <section class="panel note">
-    <span class="chip warn"><span class="dot"></span>No voice</span>
-    <p>
-      There is no multi-speaker Piper voice for this language yet (available: German, English, French, Dutch).
-      Change the language in <a href={href.project(project.slug, "wakeword")}>step 1</a> or rely on own recordings.
-    </p>
-  </section>
-{:else if status}
+{#if status}
 <div class="page">
+  {#if !status.engine.voices}
+    <section class="panel note">
+      <span class="chip warn"><span class="dot"></span>No reference voices</span>
+      <p>There is no voice bank for this language yet, so every clip uses a designed voice (less natural variety).</p>
+    </section>
+  {/if}
   <div class="top">
     <section class="panel run">
       <div class="head">
         <span class="eyebrow">Run</span>
-        <span class="chip mono" title="Piper voice">{status.voice?.name} · {status.voice?.speakers} speakers</span>
+        <span class="chip mono" title="{status.engine.model} ({status.engine.license})">
+          {status.engine.name} · {status.engine.voices} voices
+        </span>
       </div>
 
       <div class="field-block">
@@ -153,31 +160,37 @@
       </div>
 
       <div class="field-block">
-        <span class="label">Tempo <span class="faint">(length scale, lower = faster)</span></span>
+        <span class="label">Tempo <span class="faint">(speed factor, higher = faster)</span></span>
         <div class="range">
-          <input type="number" class="mono" step="0.05" min="0.3" max="2" bind:value={params.length_scale.lo} disabled={running} aria-label="Tempo min" />
+          <input type="number" class="mono" step="0.05" min="0.5" max="2" bind:value={params.speed.lo} disabled={running} aria-label="Tempo min" />
           <span class="faint">to</span>
-          <input type="number" class="mono" step="0.05" min="0.3" max="2" bind:value={params.length_scale.hi} disabled={running} aria-label="Tempo max" />
+          <input type="number" class="mono" step="0.05" min="0.5" max="2" bind:value={params.speed.hi} disabled={running} aria-label="Tempo max" />
         </div>
       </div>
 
+      <label class="check">
+        <input type="checkbox" bind:checked={params.filter} disabled={running} />
+        <span>Phonetic check <span class="faint">(drop clips that do not sound like a spelling)</span></span>
+      </label>
+
       <button class="ghost toggle" onclick={() => (advanced = !advanced)}>
-        <Icon name="sliders" size={16} /> Variation
+        <Icon name="sliders" size={16} /> Advanced
         <span class="chev" class:open={advanced}><Icon name="chevron" size={14} /></span>
       </button>
       {#if advanced}
         <div class="adv">
-          <span class="label">Noise scale <span class="faint">(voice variation)</span></span>
-          <div class="range">
-            <input type="number" class="mono" step="0.05" bind:value={params.noise_scale.lo} disabled={running} aria-label="Noise scale min" />
-            <span class="faint">to</span>
-            <input type="number" class="mono" step="0.05" bind:value={params.noise_scale.hi} disabled={running} aria-label="Noise scale max" />
+          <span class="label">Quality <span class="faint">(diffusion steps; 32 is ~2× slower)</span></span>
+          <div class="presets">
+            {#each [16, 32] as s (s)}
+              <button class="small" class:sel={params.steps === s} onclick={() => (params.steps = s)} disabled={running}>
+                {s === 16 ? "Fast (16)" : "Best (32)"}
+              </button>
+            {/each}
           </div>
-          <span class="label">Noise W <span class="faint">(rhythm variation; high values create long outliers)</span></span>
+          <span class="label">Designed voices <span class="faint">(share of batches without a reference voice)</span></span>
           <div class="range">
-            <input type="number" class="mono" step="0.05" bind:value={params.noise_w.lo} disabled={running} aria-label="Noise W min" />
-            <span class="faint">to</span>
-            <input type="number" class="mono" step="0.05" bind:value={params.noise_w.hi} disabled={running} aria-label="Noise W max" />
+            <input type="range" min="0" max="1" step="0.05" bind:value={params.design_share} disabled={running} aria-label="Designed voices share" />
+            <span class="mono">{Math.round(params.design_share * 100)}%</span>
           </div>
           <button class="ghost small" onclick={() => (params = { ...structuredClone(DEFAULTS), count: params.count })} disabled={running}>
             Restore defaults
@@ -225,7 +238,9 @@
           <span>{(job.done ?? 0).toLocaleString()} / {(job.total ?? 0).toLocaleString()}</span>
           <span>{job.rate ?? 0} clips/s</span>
           <span>ETA {running ? fmtEta(job.eta) : "–"}</span>
-          <span class="faint">{job.rejected ?? 0} rejected</span>
+          <span class="faint" title="Dropped by length or by the phonetic check">
+            {(job.rejected ?? 0) + (job.filtered ?? 0)} dropped{filterRate != null ? ` (${filterRate}% by the check)` : ""}
+          </span>
         </div>
         {#if job.state === "failed" && job.message}
           <p class="hint err">{job.message}</p>
@@ -237,7 +252,7 @@
           <pre class="log mono">{job.log || "(empty)"}</pre>
         {/if}
       {:else}
-        <p class="dim">No run yet. ~240 clips/s on the RTX 3090, so 50k clips take about 4 minutes.</p>
+        <p class="dim">No run yet. OmniVoice makes ~5 clips/s on the RTX 3090, so 20k clips take about an hour.</p>
       {/if}
       {#if total && !running}
         <button class="danger small reset" onclick={reset} disabled={busy}><Icon name="trash" size={14} /> Delete corpus</button>
@@ -249,7 +264,10 @@
     <div class="head">
       <div>
         <span class="eyebrow">Pronunciation check</span>
-        <p class="dim sub">Six random speakers per spelling. If it sounds wrong, adjust the spellings in step 1.</p>
+        <p class="dim sub">
+          Six cloned and two designed voices per spelling, with the phonetic transcript. Pink = would be dropped.
+          Takes about 40 s (models load per preview).
+        </p>
       </div>
       <a class="small-link" href={href.project(project.slug, "wakeword")}>Edit spellings</a>
     </div>
@@ -257,7 +275,7 @@
       <div class="phrase">
         <div class="phrase-head">
           <strong>{phrase}</strong>
-          <button class="small" onclick={() => preview(phrase)} disabled={!!previewing}>
+          <button class="small" onclick={() => preview(phrase)} disabled={!!previewing || running || !!otherJob}>
             <Icon name={previewing === phrase ? "replay" : "play"} size={14} />
             {previewing === phrase ? "Synthesizing…" : previews[phrase] ? "New voices" : "Preview"}
           </button>
@@ -265,7 +283,7 @@
         {#if previews[phrase]}
           <div class="grid">
             {#each previews[phrase] as c (c.url)}
-              <MiniClip url={c.url} label="spk {c.speaker}" detail="{c.seconds}s" />
+              <MiniClip url={c.url} label={voiceLabel(c.voice)} detail="{c.seconds}s · ×{c.speed}" note={c.transcript} miss={!c.hit} />
             {/each}
           </div>
         {/if}
@@ -284,7 +302,7 @@
       </div>
       <div class="grid">
         {#each samples as c (c.url)}
-          <MiniClip url={c.url} label="spk {c.speaker}" detail="{c.seconds}s · ×{c.scales?.[1]}" />
+          <MiniClip url={c.url} label={voiceLabel(c.voice)} detail="{c.seconds}s · ×{c.scales?.[0]}" note={c.phrase ?? ""} />
         {/each}
       </div>
     </section>
@@ -349,6 +367,23 @@
   }
   .range input {
     width: 90px;
+  }
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .check input {
+    accent-color: var(--cyan);
+  }
+  .range input[type="range"] {
+    width: 180px;
+    accent-color: var(--cyan);
+    padding: 0;
+    border: 0;
+    background: none;
   }
   .hint {
     font-size: 12.5px;
@@ -498,9 +533,6 @@
     margin: 0;
     color: var(--text-dim);
     line-height: 1.55;
-  }
-  .note a {
-    color: var(--cyan);
   }
   @media (max-width: 1050px) {
     .top {

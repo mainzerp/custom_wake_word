@@ -34,10 +34,15 @@ RUN uv venv /opt/venv-tts --python /usr/local/bin/python3.12 \
     && uv pip install --python /opt/venv-tts/bin/python --no-cache --no-deps \
        "$(grep -E '^onnxruntime-gpu==' /tmp/requirements-tts.txt)"
 
+# OmniVoice (voice-cloning TTS for synthetic positives) + Whisper filter, PyTorch with CUDA 13 pip libs.
+COPY docker/requirements-omni.txt /tmp/requirements-omni.txt
+RUN uv venv /opt/venv-omni --python /usr/local/bin/python3.12 \
+    && uv pip install --python /opt/venv-omni/bin/python --no-cache -r /tmp/requirements-omni.txt
+
 # Per-venv launchers. TF does not find all CUDA 12 pip libs (e.g. libcusolver) by itself,
 # but LD_LIBRARY_PATH must not leak into the TTS venv (both ship libcudnn.so.9).
 # onnxruntime-gpu likewise does not find the CUDA 13 pip libs (libcublasLt.so.13).
-RUN for v in train tts; do \
+RUN for v in train tts omni; do \
         printf '#!/bin/sh\nexport LD_LIBRARY_PATH="%s${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\nexec /opt/venv-%s/bin/python "$@"\n' \
             "$(ls -d /opt/venv-$v/lib/python3.12/site-packages/nvidia/*/lib | tr '\n' ':' | sed 's/:$//')" "$v" \
             > /usr/local/bin/py-$v \

@@ -6,7 +6,7 @@ day-to-day use.
 
 Goals:
 
-- Fast positive sample generation (batched multi-speaker TTS on GPU).
+- Natural positive samples: voice-cloning TTS (OmniVoice) with hundreds of real reference voices, checked phonetically.
 - Hard-negative mining: scan negative audio for false triggers and retrain with them.
 - Content-hash caching per input set, so new personal or negative samples are always picked up.
 - Profiles (`fast`, `thorough`).
@@ -22,9 +22,11 @@ opens a four-page wizard (name + language, TTS spellings, manifest credits, revi
 a step bar guides through the workflow, every step stays clickable and shows its status:
 
 1. Wake word: settings (name, language, TTS spellings, author, website)
-2. Synthetic samples: batched multi-speaker Piper on the GPU as a background job (live progress,
-   stop/continue, pronunciation preview per spelling, random listening). Voices: de, en, fr, nl
-   (`trainer/tts/catalog.py`)
+2. Synthetic samples: OmniVoice clones a random voice from the voice bank (or designs one from speaker
+   attributes) per clip, with random tempo and punctuation. A German wav2vec2 CTC model transcribes every
+   clip phonetically and `trainer/tts/match.py` drops clips that do not sound like a spelling (~20 %).
+   Background job with live progress, stop/continue, pronunciation preview per spelling (with transcripts)
+   and random listening. ~3.5 clips/s on the RTX 3090 (20k clips in ~1.6 h)
 3. Own recordings: Sample Studio (optional, recommended)
 4. Training - planned, milestone 1
 5. Mining - planned, milestone 2 (optional)
@@ -36,7 +38,7 @@ Opening a project jumps to the next open step.
 
 | Path | Purpose |
 |---|---|
-| `docker/Dockerfile` | Image with two venvs: `/opt/venv-train` (TF 2.21 + microWakeWord, CUDA 12 pip libs) and `/opt/venv-tts` (Piper + onnxruntime-gpu, CUDA 13 pip libs) |
+| `docker/Dockerfile` | Image with three venvs: `/opt/venv-train` (TF 2.21 + microWakeWord, CUDA 12 pip libs), `/opt/venv-omni` (OmniVoice + PyTorch, CUDA 13 pip libs) and `/opt/venv-tts` (Piper + onnxruntime-gpu, only used by spikes now) |
 | `docker/requirements-*.in` | Direct dependencies (exact pins) |
 | `docker/requirements-*.txt` | Fully resolved lock files (generated, see below) |
 | `spikes/` | Throwaway experiments with measurements |
@@ -51,12 +53,14 @@ Data layout below `data/`:
 | `projects/<slug>/project.json` | Project settings: `wake_word`, `language`, `tts_phrases`, `author`, `website` |
 | `projects/<slug>/recordings/<YYYYMMDD-HHMMSS>/` | Sample Studio takes: `recording.wav`, `clips/`, `clips.json`, `session.json` |
 | `projects/<slug>/samples/positive/`, `.../negative/` | Sorted real clips (16 kHz mono PCM16). A clip's label is the folder holding its copy |
-| `projects/<slug>/generated/tts/` | Synthetic corpus: `corpus.json` index + `shard-*.npz` (int16 clips concatenated, offsets, speaker, phrase, scales), see `trainer/tts/corpus.py` |
+| `projects/<slug>/generated/tts/` | Synthetic corpus: `corpus.json` index + `shard-*.npz` (int16 clips concatenated, offsets, voice, phrase, speed/design/steps), see `trainer/tts/corpus.py` |
 | `projects/<slug>/generated/preview/` | Last pronunciation previews per spelling |
 | `projects/<slug>/jobs/<YYYYMMDD-HHMMSS>-<kind>/` | Background job: `job.json` (command, pid), `progress.json` (written by the worker), `log.txt` |
 | `projects/<slug>/runs/`, `models/` | Training runs, exported models (planned) |
 | `datasets/` | Shared negative feature sets and augmentation audio copied from the old trainer volume |
-| `models/piper/` | Shared Piper voices (incl. the batched-`sid` ONNX patch) |
+| `voices/<language>/` | Voice bank for cloning: `<id>.wav` (2.5-5 s, 24 kHz, cut at pauses) + `voices.json` (transcript, F0, gender, source). German: 300 voices (150 m / 150 f) from Kartoffelphon |
+| `downloads/kartoffelphon/` | Kartoffelphon Arrow shards (German podcasts + LibriVox, CC-BY 4.0), source of the voice bank |
+| `models/piper/` | Piper voices from the first spikes (unused by the pipeline) |
 
 `python -m trainer.projects list` shows all projects. `python -m trainer.projects migrate --wake-word X`
 moves a pre-project `data/recordings` + `data/samples` layout into a new project (already done for Dscharwis).
@@ -77,11 +81,12 @@ Shell into the container:
 docker exec -it cww-trainer bash
 ```
 
-Inside the container, use the launchers `py-tts` (Piper venv) and `py-train` (TF venv):
+Inside the container, use the launchers `py-omni` (OmniVoice venv), `py-train` (TF venv) and `py-tts` (Piper venv):
 
 ```sh
-py-tts -m trainer.tts.generate run --project data/projects/dscharwis --job /tmp/job --count 50000
-py-tts -m trainer.tts.generate preview --project data/projects/dscharwis --phrase Dscharwis --out /tmp/preview
+py-omni -m trainer.tts.voices build --language de --max 300     # voice bank, once per language
+py-omni -m trainer.tts.omni run --project data/projects/dscharwis --job /tmp/job --count 20000
+py-omni -m trainer.tts.omni preview --project data/projects/dscharwis --phrase Jarvis --out /tmp/preview
 py-train spikes/featurize.py --input data/spikes/piper --output data/spikes/features/piper
 py-train -m microwakeword.model_train_eval --training_config spikes/train_smoke.yaml ... mixednet ...
 ```
@@ -91,7 +96,8 @@ py-train -m microwakeword.model_train_eval --training_config spikes/train_smoke.
 | Stage | Result |
 |---|---|
 | Piper `de_DE-mls-medium`, spike (batch 128, per-clip WAV) | ~260-320 samples/s inference, 45 samples/s end-to-end (serial resample + WAV write), ~5 % rejected; 50k in ~18 min (old trainer: 28 h) |
-| Piper, `trainer.tts.generate` (batch 64, tuned CUDA arena, vectorized resample in threads, npz shards) | ~240 clips/s end-to-end, ~4 % rejected; 50k in ~3.5 min. Inference is ~95 % of the time |
+| Piper, former `trainer.tts.generate` (batch 64, tuned CUDA arena, vectorized resample in threads, npz shards; removed after Spike B, see commit 942b8f3) | ~240 clips/s end-to-end, ~4 % rejected; 50k in ~3.5 min, but unusable German audio |
+| OmniVoice, `trainer.tts.omni` (batch 32, 16 steps, 2.5-5 s refs, CTC check) | ~3.5 clips/s end-to-end, ~20 % dropped by the phonetic check. TTS is ~99 % of the time; Whisper as the check was 75x slower than wav2vec2 CTC (30 s padding) |
 | Featurize 2k clips, 14 workers | 75 s (1600 train clips x2 reps x10 slides = 32k spectrograms, 1.5 GB float32) |
 | Train 500 steps + streaming int8 TFLite export | ~3 min total |
 

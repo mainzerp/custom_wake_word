@@ -1,8 +1,9 @@
 """Compact store for synthetic clips: few large shards instead of tens of thousands of WAV files.
 
-  <project>/generated/tts/corpus.json        index: voice, phrases, shards (name, count, seconds)
+  <project>/generated/tts/corpus.json        index: voice (engine), phrases, voices, shards (name, count, seconds)
   <project>/generated/tts/shard-000000.npz   audio (int16, all clips concatenated), offsets (n+1),
-                                              speaker, phrase (index into phrases), scales (n x 3)
+                                              speaker (index into voices), phrase (index into phrases),
+                                              scales (n x 3: speed, designed voice 0/1, diffusion steps)
 
 All clips are 16 kHz mono. Shards and the index are written atomically, so readers never see partial data.
 """
@@ -19,6 +20,16 @@ import numpy as np
 import soundfile as sf
 
 SAMPLE_RATE = 16000
+
+
+def trim(audio: np.ndarray, rel_threshold: float = 0.05, pad: int = 1600) -> np.ndarray:
+    """Cut leading/trailing silence below rel_threshold of the peak, keeping `pad` samples around speech."""
+    if not audio.size:
+        return audio
+    idx = np.flatnonzero(np.abs(audio) > rel_threshold * np.abs(audio).max())
+    if idx.size == 0:
+        return audio[:0]
+    return audio[max(idx[0] - pad, 0):idx[-1] + pad]
 
 
 def corpus_dir(project: Path) -> Path:
@@ -70,10 +81,13 @@ def read_clip(path: Path, shard: int, clip: int) -> tuple[np.ndarray, dict]:
             raise FileNotFoundError(f"clip not found: {shard}/{clip}")
         audio = data["audio"][offsets[clip]:offsets[clip + 1]]
         phrase = int(data["phrase"][clip])
+        speaker = int(data["speaker"][clip])
+        voices = index.get("voices", [])
         meta = {
             "shard": shard,
             "clip": clip,
-            "speaker": int(data["speaker"][clip]),
+            "speaker": speaker,
+            "voice": voices[speaker] if speaker < len(voices) else str(speaker),
             "phrase": index["phrases"][phrase] if phrase < len(index["phrases"]) else None,
             "scales": [round(float(x), 2) for x in data["scales"][clip]],
             "seconds": round(len(audio) / SAMPLE_RATE, 2),

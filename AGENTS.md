@@ -4,9 +4,15 @@
 - Host: Windows 11, Docker Desktop (WSL2), RTX 3090, driver 591.86 (CUDA 13 capable).
   Everything large goes to `data/` (git-ignored) on F:.
 - Run pipeline code inside the container: `docker compose up -d --build`, then
-  `docker exec cww-trainer py-train ...` (TF/microWakeWord) or `docker exec cww-trainer py-tts ...`
-  (Piper/TTS). Always use these launchers: they set LD_LIBRARY_PATH to the venv's CUDA pip libs.
-  The two venvs need different CUDA majors (12 vs 13), so never share LD_LIBRARY_PATH.
+  `docker exec cww-trainer py-train ...` (TF/microWakeWord), `py-omni ...` (OmniVoice TTS + CTC check,
+  PyTorch) or `py-tts ...` (Piper, spikes only). Always use these launchers: they set LD_LIBRARY_PATH to
+  the venv's CUDA pip libs. The venvs need different CUDA majors (12 vs 13), so never share LD_LIBRARY_PATH.
+- German TTS: Piper (all voices incl. MLS) is unusable for wake words; OmniVoice voice cloning won Spike B
+  (`spikes/ttsb/`, results in README). Voice bank in `data/voices/<lang>/` (`py-omni -m trainer.tts.voices build`).
+  Phonetic check of generated clips: wav2vec2 CTC + `trainer/tts/match.py` (Whisper is ~75x slower on short
+  clips because it pads to 30 s, and it guesses real words). The user prefers the spelling "Jarvis".
+- Spike venvs (`/opt/spike/{qwen,omni,voxcpm,audio8,asr}`) and `gcc` (Triton for Qwen) were installed into
+  the running container only; they vanish on rebuild. OmniVoice does not need gcc.
 - From Git Bash, prefix docker commands with `MSYS_NO_PATHCONV=1`, otherwise `/opt/...` paths get
   rewritten to `C:/Program Files/Git/opt/...`.
 - GPU code must fail hard when CUDA is unavailable (never silently fall back to CPU).
@@ -26,8 +32,8 @@
   works. Hash routes: `#/`, `#/new`, `#/p/<slug>/<step>`. All per-wake-word data lives in
   `data/projects/<slug>/`; APIs are `/api/projects/...` and `/api/projects/<slug>/studio/...`.
 - After a UI build the container picks up `ui/dist` immediately (no restart); uvicorn reloads on `trainer/` changes.
-- The server runs in the TF venv and must not import Piper/onnxruntime. GPU stages run as detached
-  subprocess jobs via `trainer/jobs.py` (`py-tts -m ...` / `py-train -m ...`, one job at a time); the
+- The server runs in the TF venv and must not import torch/OmniVoice/Piper. GPU stages run as detached
+  subprocess jobs via `trainer/jobs.py` (`py-omni -m ...` / `py-train -m ...`, one job at a time); the
   worker writes `progress.json` and handles SIGTERM as "stop after this batch". Follow this pattern for
   featurize/train/mining. The UI polls status once per second while a job runs.
 - Modules run with `python script.py` inside the container need `-e PYTHONPATH=/app`; `-m trainer...` works as is.

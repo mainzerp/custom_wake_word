@@ -62,9 +62,10 @@ export interface Range {
 
 export interface GenerateParams {
   count: number;
-  length_scale: Range;
-  noise_scale: Range;
-  noise_w: Range;
+  speed: Range;
+  steps: number;
+  design_share: number;
+  filter: boolean;
 }
 
 export type JobState = "starting" | "running" | "done" | "stopped" | "failed";
@@ -81,6 +82,7 @@ export interface Job {
   start?: number;
   total?: number;
   rejected?: number;
+  filtered?: number;
   rate?: number;
   eta?: number | null;
   message?: string;
@@ -88,7 +90,7 @@ export interface Job {
 }
 
 export interface GenerateStatus {
-  voice: { name: string; speakers: number } | null;
+  engine: { name: string; model: string; license: string; voices: number };
   corpus: { voice: string | null; phrases: string[]; total: number; seconds: number; shards: number };
   job: Job | null;
   active: Job | null;
@@ -96,10 +98,13 @@ export interface GenerateStatus {
 
 export interface GenClip {
   url: string;
-  speaker: number;
+  voice: string;
   seconds: number;
+  speed?: number;
   phrase?: string | null;
   scales?: number[];
+  transcript?: string;
+  hit?: boolean;
 }
 
 export const LANGUAGES: Record<string, string> = {

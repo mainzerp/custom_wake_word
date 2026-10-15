@@ -12,7 +12,7 @@ export interface Step {
 
 export const STEPS = [
   { id: "wakeword", label: "Wake word", icon: "type", sub: "Name, language and how the TTS voices should pronounce it.", available: true },
-  { id: "generate", label: "Synthetic samples", icon: "sparkles", sub: "Hundreds of Piper TTS speakers saying your wake word, generated on the GPU.", available: true },
+  { id: "generate", label: "Synthetic samples", icon: "sparkles", sub: "Hundreds of cloned German voices (OmniVoice) saying your wake word, checked phonetically.", available: true },
   { id: "record", label: "Own recordings", icon: "mic", sub: "Record takes, split them, sort every clip.", available: true, optional: true },
   { id: "train", label: "Training", icon: "pulse", sub: "Featurize, train and calibrate the model.", available: false, milestone: "Milestone 1" },
   { id: "mining", label: "Mining", icon: "radar", sub: "Hunt false triggers in hours of speech and feed them back.", available: false, optional: true, milestone: "Milestone 2" },

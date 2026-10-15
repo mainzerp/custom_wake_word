@@ -39,8 +39,8 @@ export const generate = {
   status: () => request<GenerateStatus>(`${projectBase()}/generate`),
   start: (params: GenerateParams) => post<Job>(`${projectBase()}/generate/start`, params),
   reset: () => post<GenerateStatus>(`${projectBase()}/generate/reset`, {}),
-  preview: (phrase: string, length_scale: Range) =>
-    post<{ voice: string; clips: GenClip[] }>(`${projectBase()}/generate/preview`, { phrase, length_scale }),
+  preview: (phrase: string, speed: Range, steps: number) =>
+    post<{ engine: string; clips: GenClip[] }>(`${projectBase()}/generate/preview`, { phrase, speed, steps }),
   samples: (n = 12) => request<{ clips: GenClip[] }>(`${projectBase()}/generate/samples?n=${n}`),
 };
 
