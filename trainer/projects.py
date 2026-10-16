@@ -1,6 +1,6 @@
 """Wake word projects: one directory per wake word below PROJECTS.
 
-  <slug>/project.json   settings (wake word, language, TTS spellings, manifest author/website)
+  <slug>/project.json   settings (wake word, language, TTS spellings, sound-alike negatives, manifest author/website)
   <slug>/recordings/    Sample Studio takes
   <slug>/samples/       sorted real clips (positive/, negative/)
   <slug>/generated/     synthetic positives (TTS corpus shards, previews)
@@ -29,16 +29,17 @@ from pathlib import Path
 
 from trainer.paths import LEGACY_RECORDINGS, LEGACY_SAMPLES, PROJECTS
 from trainer.studio.splitter import sanitize_prefix
-from trainer.tts import corpus, phonetic
+from trainer.tts import confusables, corpus, phonetic
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 LANGUAGE_RE = re.compile(r"^[a-z]{2}$")
-SETTINGS = ("wake_word", "language", "tts_phrases", "author", "website", "borrow_negatives")
+SETTINGS = ("wake_word", "language", "tts_phrases", "author", "website", "borrow_negatives", "confusables")
+MAX_CONFUSABLES = 200
 BORROW_KINDS = ("recordings", "synthetic")
 # Phone distance between the two wake words (see phonetic.word_distance). Up to CONFLICT_MAX the other project's
 # clips would teach contradicting labels ("Jarvis" vs. "Hey Jarvis") and are refused. Up to CLOSE_MAX they are
 # only flagged: those are the most useful hard negatives ("Marvin", "Davis").
-CONFLICT_MAX = 0.35
+CONFLICT_MAX = phonetic.CONFLICT_MAX
 CLOSE_MAX = 0.55
 
 
@@ -71,6 +72,11 @@ def clean_settings(raw: dict) -> dict:
     for key in ("author", "website"):
         if key in settings:
             settings[key] = settings[key].strip()
+    if "confusables" in settings:
+        words = list(dict.fromkeys(w.strip() for w in settings["confusables"] if w.strip()))
+        if len(words) > MAX_CONFUSABLES or any(len(w) > 60 for w in words):
+            raise ValueError(f"at most {MAX_CONFUSABLES} sound-alikes of 1-60 characters")
+        settings["confusables"] = words
     if "borrow_negatives" in settings:
         borrow = {}
         for entry in settings["borrow_negatives"]:
@@ -97,6 +103,7 @@ def own_counts(path: Path) -> dict:
         "negative": count_files(path / "samples" / "negative"),
         "sessions": count_dirs(path / "recordings"),
         "generated": corpus.load_index(corpus.corpus_dir(path))["total"],
+        "confusable": corpus.load_index(corpus.confusable_dir(path))["total"],
         "runs": count_dirs(path / "runs"),
         "models": count_files(path / "models", "*.tflite"),
     }
@@ -112,7 +119,8 @@ def read(path: Path) -> dict:
 
 def load(path: Path) -> dict:
     data = read(path)
-    return {**data, "slug": path.name, "borrow_negatives": data.get("borrow_negatives", []), "summary": summary(path, data)}
+    return {**data, "slug": path.name, "borrow_negatives": data.get("borrow_negatives", []),
+            "confusables": data.get("confusables", []), "summary": summary(path, data)}
 
 
 def similarity(a: dict, b: dict) -> dict:
@@ -209,6 +217,11 @@ def update(slug: str, raw: dict) -> dict:
             raise FileNotFoundError(f"project not found: {entry['slug']}")
         if similarity(data, read(other))["level"] == "conflict":
             raise ValueError(f"the wake word of {entry['slug']!r} sounds too much like this one to use its clips as negatives")
+    if raw.get("confusables"):
+        scores = confusables.score(data["confusables"], data["tts_phrases"], data["language"])
+        close = [w for w, d in zip(data["confusables"], scores) if d <= CONFLICT_MAX]
+        if close:
+            raise ValueError(f"these sound like the wake word itself, not like a negative: {', '.join(close)}")
     data["updated"] = datetime.now().isoformat(timespec="seconds")
     write(path, data)
     return load(path)

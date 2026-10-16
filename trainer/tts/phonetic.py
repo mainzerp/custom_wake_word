@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import dataclass
-from functools import lru_cache
 
 import numpy as np
 
@@ -29,6 +28,9 @@ MODEL = "facebook/wav2vec2-xlsr-53-espeak-cv-ft"
 POSITIVE_MAX = 0.30
 NEGATIVE_MIN = 0.70
 CONTAINED_MIN = 0.50  # a negative must not contain the wake word inside longer speech either
+# Two spellings this close (phones_distance) count as the same word: "Hey Jarvis" 0.11, "Jarwos" 0.13 vs. "Jarvis",
+# while "Garvis" 0.33 is borderline and "Marvin" 0.47 / "Davis" 0.44 are useful hard negatives.
+CONFLICT_MAX = 0.35
 ONSET_WEIGHT = 2.5
 MIN_NEGATIVE_PHONES = 3
 RATE = 16000
@@ -130,23 +132,49 @@ def contained_distance(phones: list[str], target: list[str]) -> float:
     return min(prev) / sum(w)
 
 
-@lru_cache(maxsize=512)
+def espeak_many(texts: list[str], language: str) -> list[str]:
+    """IPA of many texts in one espeak-ng call (one input line per text, one output line each)."""
+    lines = [t.replace("\n", " ").strip(" .!?,;:") for t in texts]
+    out = subprocess.run(["espeak-ng", "-q", "--ipa=3", "-v", language], input="\n".join(lines) + "\n",
+                         capture_output=True, text=True, check=True).stdout.strip("\n").split("\n")
+    if len(out) != len(lines):  # espeak merged or split clauses: fall back to one call per text
+        return [espeak_ipa(t, language) for t in lines]
+    return [o.strip().translate(STRIP) for o in out]
+
+
+def plain_phones(ipa: str) -> tuple[str, ...]:
+    ipa = ipa.replace(" ", "").replace("_", "")
+    return tuple(tokenize(ipa, set(ipa) | UNITS | {c + "ː" for c in ipa}))
+
+
+_PHONES: dict[tuple[str, str], tuple[str, ...]] = {}
+
+
+def phrases_phones(texts: list[str], language: str) -> list[tuple[str, ...]]:
+    """espeak-ng phones of spellings without the recognizer's inventory (for comparing two spellings), cached."""
+    missing = list(dict.fromkeys(t for t in texts if (t, language) not in _PHONES))
+    if missing:
+        if len(_PHONES) > 50_000:
+            _PHONES.clear()
+        for t, ipa in zip(missing, espeak_many(missing, language)):
+            _PHONES[(t, language)] = plain_phones(ipa)
+    return [_PHONES[(t, language)] for t in texts]
+
+
 def phrase_phones(text: str, language: str) -> tuple[str, ...]:
-    """espeak-ng phones of a spelling without the recognizer's inventory (for comparing two spellings)."""
-    ipa = espeak_ipa(text, language).replace(" ", "").replace("_", "")
-    vocab = set(ipa) | UNITS | {c + "ː" for c in ipa}
-    return tuple(tokenize(ipa, vocab))
+    return phrases_phones([text], language)[0]
+
+
+def phones_distance(pa: list[str] | tuple[str, ...], pb: list[str] | tuple[str, ...]) -> float:
+    """Symmetric distance of two phone sequences; containment ("Hey Jarvis" holds "Jarvis") counts as close."""
+    pa, pb = list(pa), list(pb)
+    return min(distance(pa, pb), distance(pb, pa), contained_distance(pa, pb), contained_distance(pb, pa))
 
 
 def word_distance(a: list[str], language_a: str, b: list[str], language_b: str) -> float:
     """Smallest symmetric phone distance between any spelling of wake word a and any spelling of b."""
-    best = 1.0
-    for x in a:
-        for y in b:
-            pa, pb = list(phrase_phones(x, language_a)), list(phrase_phones(y, language_b))
-            # contained: "Hey Jarvis" holds "Jarvis" entirely, which is just as conflicting as the same word
-            best = min(best, distance(pa, pb), distance(pb, pa), contained_distance(pa, pb), contained_distance(pb, pa))
-    return round(best, 3)
+    pa, pb = phrases_phones(a, language_a), phrases_phones(b, language_b)
+    return round(min([1.0] + [phones_distance(x, y) for x in pa for y in pb]), 3)
 
 
 @dataclass
@@ -154,6 +182,7 @@ class Score:
     phones: list[str]
     distance: float
     band: str  # positive | gray | negative
+    contained: float = 1.0  # distance of the best matching stretch of the clip to the wake word
 
 
 def band(full: float, contained: float, n_phones: int) -> str:
@@ -206,5 +235,5 @@ class PhoneChecker:
         for phones in self.transcribe(clips):
             d = min(distance(phones, t) for t in self.targets.values())
             c = min(contained_distance(phones, t) for t in self.targets.values())
-            result.append(Score(phones, round(d, 3), band(d, c, len(phones))))
+            result.append(Score(phones, round(d, 3), band(d, c, len(phones)), round(c, 3)))
         return result

@@ -3,6 +3,7 @@
   import Icon from "../../components/Icon.svelte";
   import ProjectFields from "../../components/project/ProjectFields.svelte";
   import PronunciationCheck from "../../components/project/PronunciationCheck.svelte";
+  import SoundAlikes from "../../components/project/SoundAlikes.svelte";
   import { projects } from "../../lib/api";
   import { app, setProject, toast, toastError } from "../../lib/state.svelte";
   import type { Project, ProjectSettings } from "../../lib/types";
@@ -13,6 +14,7 @@
     wake_word: p.wake_word,
     language: p.language,
     tts_phrases: [...p.tts_phrases],
+    confusables: [...p.confusables],
     author: p.author,
     website: p.website,
   });
@@ -42,6 +44,8 @@
     <hr />
     <ProjectFields bind:settings sections={["phrases"]} />
     <PronunciationCheck language={settings.language} phrases={settings.tts_phrases} />
+    <hr />
+    <SoundAlikes bind:words={settings.confusables} language={settings.language} phrases={settings.tts_phrases} />
     <hr />
     <ProjectFields bind:settings sections={["manifest"]} />
     <div class="actions">

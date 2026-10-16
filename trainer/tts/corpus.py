@@ -6,6 +6,8 @@
                                               scales (n x 4: speed, designed voice 0/1, diffusion steps,
                                               phone distance to the closest spelling, see trainer/tts/phonetic.py)
   <project>/generated/tts-negative/          same layout for negative candidates (clearly different phones)
+  <project>/generated/tts-confusable/        same layout for sound-alike negatives; phrase = the sound-alike word,
+                                              the distance is to the closest wake word spelling
 
 All clips are 16 kHz mono. Shards and the index are written atomically, so readers never see partial data.
 """
@@ -41,6 +43,11 @@ def corpus_dir(project: Path) -> Path:
 def negative_dir(project: Path) -> Path:
     """TTS clips the phonetic check found clearly different from the wake word (negative candidates)."""
     return project / "generated" / "tts-negative"
+
+
+def confusable_dir(project: Path) -> Path:
+    """TTS clips of sound-alike words (trainer.tts.confusables), checked not to sound like the wake word."""
+    return project / "generated" / "tts-confusable"
 
 
 def load_index(path: Path) -> dict:

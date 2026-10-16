@@ -2,6 +2,7 @@ import { slug } from "./state.svelte";
 import type {
   BorrowCandidate,
   BorrowEntry,
+  ConfusableParams,
   Counts,
   GenClip,
   GenerateParams,
@@ -11,6 +12,7 @@ import type {
   Project,
   ProjectSettings,
   Session,
+  SoundAlike,
   SplitParams,
 } from "./types";
 
@@ -42,11 +44,15 @@ export const generate = {
   status: () => request<GenerateStatus>(`${projectBase()}/generate`),
   start: (params: GenerateParams) => post<Job>(`${projectBase()}/generate/start`, params),
   reset: () => post<GenerateStatus>(`${projectBase()}/generate/reset`, {}),
-  samples: (n = 12, kind: "positive" | "negative" = "positive") =>
+  samples: (n = 12, kind: "positive" | "negative" | "confusable" = "positive") =>
     request<{ clips: GenClip[] }>(`${projectBase()}/generate/samples?n=${n}&kind=${kind}`),
+  startConfusables: (params: ConfusableParams) => post<Job>(`${projectBase()}/generate/confusables/start`, params),
+  resetConfusables: () => post<GenerateStatus>(`${projectBase()}/generate/confusables/reset`, {}),
 };
 
 export const tts = {
+  soundAlikes: (language: string, phrases: string[], words: string[], suggest = 0) =>
+    post<{ words: SoundAlike[]; suggestions: SoundAlike[] }>("/api/tts/sound-alikes", { language, phrases, words, suggest }),
   preview: (language: string, phrases: string[], n = 2) =>
     post<{ engine: string; clips: GenClip[] }>("/api/tts/preview", { language, phrases, n }),
 };

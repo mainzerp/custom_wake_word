@@ -55,11 +55,12 @@ Data layout below `data/`:
 
 | Path | Content |
 |---|---|
-| `projects/<slug>/project.json` | Project settings: `wake_word`, `language`, `tts_phrases`, `author`, `website`, `borrow_negatives` (other projects whose recordings and/or synthetic clips count as negatives here; referenced, not copied; refused when the wake words are within phone distance 0.35, see `trainer/projects.py`) |
+| `projects/<slug>/project.json` | Project settings: `wake_word`, `language`, `tts_phrases`, `confusables` (sound-alike negatives, see `trainer/tts/confusables.py`), `author`, `website`, `borrow_negatives` (other projects whose recordings and/or synthetic clips count as negatives here; referenced, not copied; refused when the wake words are within phone distance 0.35, see `trainer/projects.py`) |
 | `projects/<slug>/recordings/<YYYYMMDD-HHMMSS>/` | Sample Studio takes: `recording.wav`, `clips/`, `clips.json`, `session.json` |
 | `projects/<slug>/samples/positive/`, `.../negative/` | Sorted real clips (16 kHz mono PCM16). A clip's label is the folder holding its copy |
 | `projects/<slug>/generated/tts/` | Synthetic corpus: `corpus.json` index + `shard-*.npz` (int16 clips concatenated, offsets, voice, phrase, speed/design/steps), see `trainer/tts/corpus.py` |
 | `projects/<slug>/generated/tts-negative/` | Negative candidates: TTS clips that came out clearly different from every spelling (same format) |
+| `projects/<slug>/generated/tts-confusable/` | Sound-alike negatives: the `confusables` spoken by the voice bank, minus clips that sounded like (or contained) the wake word (same format) |
 | `cache/preview/<key>/` | Pronunciation check clips (last 20 checks) |
 | `projects/<slug>/jobs/<YYYYMMDD-HHMMSS>-<kind>/` | Background job: `job.json` (command, pid), `progress.json` (written by the worker), `log.txt` |
 | `projects/<slug>/runs/`, `models/` | Training runs, exported models (planned) |
@@ -104,6 +105,7 @@ py-train -m microwakeword.model_train_eval --training_config spikes/train_smoke.
 | Piper `de_DE-mls-medium`, spike (batch 128, per-clip WAV) | ~260-320 samples/s inference, 45 samples/s end-to-end (serial resample + WAV write), ~5 % rejected; 50k in ~18 min (old trainer: 28 h) |
 | Piper, former `trainer.tts.generate` (batch 64, tuned CUDA arena, vectorized resample in threads, npz shards; removed after Spike B, see commit 942b8f3) | ~240 clips/s end-to-end, ~4 % rejected; 50k in ~3.5 min, but unusable German audio |
 | OmniVoice, `trainer.tts.omni` (batch 32, 16 steps, 2.5-5 s refs, IPA phone check) | ~3-4 positive clips/s, ~30 % gray zone, ~0.5 % negative candidates. TTS is ~98 % of the time; Whisper as the check was 75x slower than wav2vec2 CTC (30 s padding) and guessed real words |
+| Sound-alikes, `trainer.tts.omni --mode confusable` (24 words, batch 32, 16 steps) | ~4.4 clips/s, ~5 % dropped as too close to the wake word; suggestions (letter edits + 3.6k voice-bank words, espeak in one batch) ~4 s |
 | Phone check calibration (`spikes/phonetic_check.py`) | OmniVoice 79 % positive / 0 % negative, own recordings median Δ 0.24, random German speech 0 % positive / 88 % negative, Piper MLS 0 % positive, "Garvis" 0.33 / "Davis" 0.44 gray |
 | Featurize 2k clips, 14 workers | 75 s (1600 train clips x2 reps x10 slides = 32k spectrograms, 1.5 GB float32) |
 | Train 500 steps + streaming int8 TFLite export | ~3 min total |

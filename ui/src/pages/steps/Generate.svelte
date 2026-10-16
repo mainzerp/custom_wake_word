@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import Icon from "../../components/Icon.svelte";
   import MiniClip from "../../components/MiniClip.svelte";
+  import ConfusableRun from "../../components/project/ConfusableRun.svelte";
   import { generate, jobs } from "../../lib/api";
   import { href } from "../../lib/router.svelte";
   import { app, toast, toastError } from "../../lib/state.svelte";
@@ -27,7 +28,7 @@
 
   const job = $derived(status?.job ?? null);
   const running = $derived(!!job && job.alive && (job.state === "running" || job.state === "starting"));
-  const otherJob = $derived(status?.active && status.active.project !== project.slug ? status.active : null);
+  const otherJob = $derived(status?.active && status.active.id !== job?.id ? status.active : null);
   const total = $derived(status?.corpus.total ?? 0);
   const pct = $derived(job?.total ? Math.min(100, ((job.done ?? 0) / job.total) * 100) : 0);
   const startPct = $derived(job?.total ? ((job.start ?? 0) / job.total) * 100 : 0);
@@ -35,13 +36,16 @@
     !!status?.corpus.total && project.tts_phrases.some((p) => !status!.corpus.phrases.includes(p)),
   );
 
-  async function refresh() {
+  async function refresh(given?: GenerateStatus) {
     try {
       const wasRunning = running;
-      const s = await generate.status();
+      const s = given ?? (await generate.status());
       if (!status && s.job?.params?.speed) params = { ...structuredClone(DEFAULTS), ...s.job.params } as GenerateParams;
       status = s;
-      if (app.project?.slug === project.slug) app.project.summary.generated = s.corpus.total;
+      if (app.project?.slug === project.slug) {
+        app.project.summary.generated = s.corpus.total;
+        app.project.summary.confusable = s.confusables.total;
+      }
       if (wasRunning && s.job && !s.job.alive) {
         if (s.job.state === "failed") toastError(s.job.message ?? "Generation failed");
         else toast(s.job.state === "done" ? `Done: ${s.corpus.total.toLocaleString()} synthetic clips.` : "Generation stopped.");
@@ -53,7 +57,7 @@
   }
 
   $effect(() => {
-    untrack(refresh);
+    untrack(() => refresh());
     const id = setInterval(() => (running || otherJob) && refresh(), 1000);
     return () => clearInterval(id);
   });
@@ -280,6 +284,8 @@
       </div>
     </section>
   {/if}
+
+  <ConfusableRun {project} {status} onstatus={(s) => refresh(s)} />
 
   {#if status.negatives.total}
     <section class="panel block">

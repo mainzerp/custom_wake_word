@@ -37,8 +37,18 @@ export interface ProjectSettings {
   wake_word: string;
   language: string;
   tts_phrases: string[];
+  confusables: string[];
   author: string;
   website: string;
+}
+
+export type SoundAlikeLevel = "conflict" | "ok" | "far";
+
+export interface SoundAlike {
+  text: string;
+  distance: number;
+  level: SoundAlikeLevel;
+  kind?: "word" | "onset" | "inner" | "vowel" | "ending";
 }
 
 export interface ProjectSummary extends Counts {
@@ -47,6 +57,7 @@ export interface ProjectSummary extends Counts {
   runs: number;
   models: number;
   borrowed: number;
+  confusable: number;
 }
 
 export interface BorrowEntry {
@@ -113,8 +124,17 @@ export interface GenerateStatus {
   engine: { name: string; model: string; license: string; voices: number };
   corpus: { voice: string | null; phrases: string[]; total: number; seconds: number; shards: number };
   negatives: { total: number; seconds: number };
+  confusables: { phrases: string[]; total: number; seconds: number };
   job: Job | null;
+  confusable_job: Job | null;
   active: Job | null;
+}
+
+export interface ConfusableParams {
+  count: number;
+  speed: Range;
+  steps: number;
+  design_share: number;
 }
 
 export interface GenClip {

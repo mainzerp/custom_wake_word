@@ -15,7 +15,7 @@
     { id: "review", title: "Ready to forge", text: "Here is what happens next. Every step stays reachable from the step bar." },
   ] as const;
 
-  let settings = $state<ProjectSettings>({ wake_word: "", language: "de", tts_phrases: [], author: "", website: "" });
+  let settings = $state<ProjectSettings>({ wake_word: "", language: "de", tts_phrases: [], confusables: [], author: "", website: "" });
   let page = $state(0);
   let busy = $state(false);
   let lastName = "";

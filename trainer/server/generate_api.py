@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from trainer import jobs, projects
 from trainer.paths import DATA
-from trainer.tts import corpus
+from trainer.tts import confusables, corpus
 from trainer.tts.voices import load_bank
 
 router = APIRouter(prefix="/api/projects/{slug}/generate")
@@ -25,7 +25,7 @@ tts_router = APIRouter(prefix="/api/tts")
 PREVIEW_TIMEOUT_S = 300
 PREVIEWS = DATA / "cache" / "preview"
 KEEP_PREVIEWS = 20
-Kind = Literal["positive", "negative"]
+Kind = Literal["positive", "negative", "confusable"]
 ENGINE = {"name": "OmniVoice", "model": "k2-fsa/OmniVoice", "license": "CC-BY-NC 4.0 weights"}
 
 
@@ -48,6 +48,20 @@ class GenerateBody(BaseModel):
     steps: int = Field(default=16, ge=8, le=64)
     design_share: float = Field(default=0.15, ge=0.0, le=1.0)
     filter: bool = True
+
+
+class ConfusableBody(BaseModel):
+    count: int = Field(ge=100, le=200_000)
+    speed: Range = Range(lo=0.85, hi=1.2)
+    steps: int = Field(default=16, ge=8, le=64)
+    design_share: float = Field(default=0.15, ge=0.0, le=1.0)
+
+
+class SoundAlikeBody(BaseModel):
+    language: str = Field(pattern=r"^[a-z]{2}$")
+    phrases: list[str] = Field(min_length=1, max_length=8)
+    words: list[str] = Field(default=[], max_length=projects.MAX_CONFUSABLES)
+    suggest: int = Field(default=0, ge=0, le=60)
 
 
 class PreviewBody(BaseModel):
@@ -82,13 +96,37 @@ def status(slug: str) -> dict:
     project = projects.load(path)
     index = corpus.load_index(corpus.corpus_dir(path))
     negatives = corpus.load_index(corpus.negative_dir(path))
+    sound_alikes = corpus.load_index(corpus.confusable_dir(path))
     return {
         "engine": {**ENGINE, "voices": len(load_bank(project["language"]))},
         "corpus": {k: index[k] for k in ("voice", "phrases", "total", "seconds")} | {"shards": len(index["shards"])},
         "negatives": {"total": negatives["total"], "seconds": negatives["seconds"]},
+        "confusables": {k: sound_alikes[k] for k in ("phrases", "total", "seconds")},
         "job": jobs.latest(path, "generate"),
+        "confusable_job": jobs.latest(path, "confusables"),
         "active": jobs.active(),
     }
+
+
+@router.post("/confusables/start")
+def start_confusables(slug: str, body: ConfusableBody) -> dict:
+    path = projects.project_dir(slug)
+    if not projects.load(path)["confusables"]:
+        raise ValueError("add sound-alike words in the wake word step first")
+    cmd = [py_omni(), "-m", "trainer.tts.omni", "run", "--mode", "confusable", "--project", str(path),
+           "--count", str(body.count), "--speed", str(body.speed.lo), str(body.speed.hi), "--steps", str(body.steps),
+           "--design-share", str(body.design_share)]
+    return jobs.start(path, "confusables", cmd, body.model_dump())
+
+
+@router.post("/confusables/reset")
+def reset_confusables(slug: str) -> dict:
+    path = projects.project_dir(slug)
+    running = jobs.active()
+    if running and running["project"] == slug:
+        raise ValueError("stop the running job first")
+    corpus.reset(corpus.confusable_dir(path))
+    return status(slug)
 
 
 @router.post("/start")
@@ -147,9 +185,21 @@ def preview_file(key: str, name: str) -> FileResponse:
     return FileResponse(path, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
 
+@tts_router.post("/sound-alikes")
+def sound_alikes(body: SoundAlikeBody) -> dict:
+    """Phone distance of the given sound-alikes to the spellings, plus `suggest` new ones (CPU, espeak only)."""
+    words = list(dict.fromkeys(w.strip() for w in body.words if w.strip()))
+    scored = confusables.score(words, body.phrases, body.language) if words else []
+    suggestions = confusables.suggest(body.phrases, body.language, body.suggest, words) if body.suggest else []
+    return {
+        "words": [{"text": w, "distance": d, "level": confusables.level(d)} for w, d in zip(words, scored)],
+        "suggestions": [{**s, "level": confusables.level(s["distance"])} for s in suggestions],
+    }
+
+
 def kind_dir(slug: str, kind: Kind) -> Path:
     path = projects.project_dir(slug)
-    return corpus.corpus_dir(path) if kind == "positive" else corpus.negative_dir(path)
+    return {"positive": corpus.corpus_dir, "negative": corpus.negative_dir, "confusable": corpus.confusable_dir}[kind](path)
 
 
 @router.get("/samples")

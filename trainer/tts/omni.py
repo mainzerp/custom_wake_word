@@ -1,12 +1,16 @@
 """Synthetic wake word positives with OmniVoice voice cloning (runs in the OmniVoice venv).
 
   py-omni -m trainer.tts.omni run --project data/projects/x --job <job dir> --count 20000
+  py-omni -m trainer.tts.omni run --mode confusable --project data/projects/x --job <job dir> --count 5000
   py-omni -m trainer.tts.omni preview --language de --phrases Jarvis Dscharwis --out <dir>
 
 Every clip clones a random reference voice from the bank (data/voices/<language>/) or, for --design-share of the
 batches, a voice designed from speaker attributes. Tempo and punctuation vary per clip. A phone recognizer scores
 each clip against the espeak pronunciation of the spellings (trainer.tts.phonetic): close clips go to the corpus,
 clearly different ones (TTS slips) to the negative candidates, the gray zone in between is dropped.
+
+With --mode confusable, `run` speaks the project's sound-alike words instead (trainer.tts.confusables) into
+generated/tts-confusable/, keeping only clips that do not sound like (or contain) the wake word.
 
 `run` is resumable: it tops the corpus up to --count clips. SIGTERM stops after the current batch.
 Progress goes to <job dir>/progress.json.
@@ -28,7 +32,7 @@ import torch
 from scipy.signal import resample_poly
 
 from trainer.tts import corpus
-from trainer.tts.phonetic import PhoneChecker, Score
+from trainer.tts.phonetic import MIN_NEGATIVE_PHONES, POSITIVE_MAX, PhoneChecker, Score
 from trainer.tts.voices import load_bank, voice_dir
 
 ENGINE = "omnivoice"
@@ -124,8 +128,14 @@ def run(args: argparse.Namespace) -> None:
 
     project_dir = Path(args.project)
     project = load_project(project_dir)
-    phrases = project["phrases"]
-    out = corpus.corpus_dir(project_dir)
+    wake = project["phrases"]
+    confusable = args.mode == "confusable"
+    # positive mode speaks the spellings: close -> corpus, clearly different -> negative candidates.
+    # confusable mode speaks the sound-alikes: everything that does not sound like the wake word is kept.
+    phrases = (project.get("confusables") or []) if confusable else wake
+    if not phrases:
+        raise RuntimeError("no sound-alike words in this project; add some in the wake word step")
+    out = corpus.confusable_dir(project_dir) if confusable else corpus.corpus_dir(project_dir)
     index = corpus.load_index(out)
     if index["voice"] not in (None, ENGINE):
         raise RuntimeError(f"corpus was generated with {index['voice']}; reset it before using {ENGINE}")
@@ -137,7 +147,8 @@ def run(args: argparse.Namespace) -> None:
                 "negatives": negatives_start, "rate": 0.0}
     write_progress(args.job, **progress, message="loading OmniVoice and the phonetic check")
 
-    synth = Synth(project["language"], args.steps, None if args.no_filter else phrases)
+    no_filter = args.no_filter and not confusable
+    synth = Synth(project["language"], args.steps, None if no_filter else wake)
     designs = design_voices()
     names = [f"bank:{v['id']}" for v in synth.bank] + [f"design:{d}" for d in designs]
     for idx in (index, neg_index):
@@ -147,8 +158,8 @@ def run(args: argparse.Namespace) -> None:
         idx["voices"] += [n for n in names if n not in idx["voices"]]
     voice_pos = {n: i for i, n in enumerate(index["voices"])}
     neg_voice_pos = {n: i for i, n in enumerate(neg_index["voices"])}
-    print(f"OmniVoice ready: {len(synth.bank)} bank voices, {len(designs)} designs, phrases {phrases}, "
-          f"steps {args.steps}, filter {'off' if args.no_filter else 'on'}", flush=True)
+    print(f"OmniVoice ready ({args.mode}): {len(synth.bank)} bank voices, {len(designs)} designs, "
+          f"{len(phrases)} phrases, steps {args.steps}, filter {'off' if no_filter else 'on'}", flush=True)
     if not synth.bank and args.design_share < 1:
         print("no voice bank for this language, using voice design only", flush=True)
 
@@ -174,10 +185,20 @@ def run(args: argparse.Namespace) -> None:
         scores = synth.score([b[0] for b in batch])
         timing["check"] += time.perf_counter() - t
         for (clip, voice, phrase, speed, design), s in zip(batch, scores):
-            if s.band == "gray" or (s.band == "positive" and done >= args.count):
-                filtered += s.band == "gray"
-                continue
-            positive = s.band == "positive"
+            if confusable:
+                # A sound-alike that came out like the wake word (or holds it) would contradict the positives,
+                # one with hardly any phones is hum from a failed generation.
+                if s.band == "positive" or s.contained <= POSITIVE_MAX or len(s.phones) < MIN_NEGATIVE_PHONES:
+                    filtered += 1
+                    continue
+                positive = done < args.count
+                if not positive:
+                    continue
+            else:
+                if s.band == "gray" or (s.band == "positive" and done >= args.count):
+                    filtered += s.band == "gray"
+                    continue
+                positive = s.band == "positive"
             b, pos, idx = (buf, voice_pos, index) if positive else (neg_buf, neg_voice_pos, neg_index)
             b["clips"].append(clip / np.abs(clip).max() * 0.9)
             b["speaker"].append(pos[voice])
@@ -220,8 +241,9 @@ def run(args: argparse.Namespace) -> None:
     elapsed = time.perf_counter() - t0
     write_progress(args.job, **{**progress, "state": state, "done": done, "rejected": rejected, "filtered": filtered,
                                 "negatives": neg_index["total"], "rate": round((done - start) / elapsed, 2), "eta": 0})
-    print(f"{state}: {done} clips ({done - start} new, {rejected} rejected by length, {filtered} gray zone, "
-          f"{neg_index['total'] - negatives_start} negative candidates) in {elapsed:.0f}s, "
+    dropped = (f"{filtered} sounded like the wake word" if confusable else
+               f"{filtered} gray zone, {neg_index['total'] - negatives_start} negative candidates")
+    print(f"{state}: {done} clips ({done - start} new, {rejected} rejected by length, {dropped}) in {elapsed:.0f}s, "
           + ", ".join(f"{k} {v:.1f}s" for k, v in timing.items()), flush=True)
 
 
@@ -274,7 +296,8 @@ def main() -> None:
     r.add_argument("--count", type=int, required=True)
     r.add_argument("--batch", type=int, default=32)
     r.add_argument("--design-share", type=float, default=0.15)
-    r.add_argument("--no-filter", action="store_true")
+    r.add_argument("--no-filter", action="store_true", help="positive mode only; sound-alikes are always checked")
+    r.add_argument("--mode", choices=["positive", "confusable"], default="positive")
     r.add_argument("--min-seconds", type=float, default=0.3)
     r.add_argument("--max-seconds", type=float, default=2.0)
     pv = sub.choices["preview"]

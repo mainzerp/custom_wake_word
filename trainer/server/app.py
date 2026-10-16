@@ -67,6 +67,7 @@ class ProjectBody(BaseModel):
     author: str | None = None
     website: str | None = None
     borrow_negatives: list[BorrowEntry] | None = None
+    confusables: list[str] | None = None
 
 
 @project_api.get("")
