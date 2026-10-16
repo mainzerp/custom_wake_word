@@ -10,6 +10,11 @@
 
 Shared datasets (negatives, RIRs, background noise) stay global below DATA/datasets.
 
+A project can borrow other projects' clips as negatives ("borrow_negatives" in project.json): their own recordings
+(positive and negative) and/or their synthetic positives. They are referenced, not copied, so later changes in the
+other project carry over. Projects whose wake word sounds like this one are refused, their clips would contradict
+this project's positives.
+
   python -m trainer.projects migrate --wake-word Dscharwis --language de
 """
 
@@ -24,11 +29,17 @@ from pathlib import Path
 
 from trainer.paths import LEGACY_RECORDINGS, LEGACY_SAMPLES, PROJECTS
 from trainer.studio.splitter import sanitize_prefix
-from trainer.tts import corpus
+from trainer.tts import corpus, phonetic
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 LANGUAGE_RE = re.compile(r"^[a-z]{2}$")
-SETTINGS = ("wake_word", "language", "tts_phrases", "author", "website")
+SETTINGS = ("wake_word", "language", "tts_phrases", "author", "website", "borrow_negatives")
+BORROW_KINDS = ("recordings", "synthetic")
+# Phone distance between the two wake words (see phonetic.word_distance). Up to CONFLICT_MAX the other project's
+# clips would teach contradicting labels ("Jarvis" vs. "Hey Jarvis") and are refused. Up to CLOSE_MAX they are
+# only flagged: those are the most useful hard negatives ("Marvin", "Davis").
+CONFLICT_MAX = 0.35
+CLOSE_MAX = 0.55
 
 
 def slugify(text: str) -> str:
@@ -60,6 +71,15 @@ def clean_settings(raw: dict) -> dict:
     for key in ("author", "website"):
         if key in settings:
             settings[key] = settings[key].strip()
+    if "borrow_negatives" in settings:
+        borrow = {}
+        for entry in settings["borrow_negatives"]:
+            if not SLUG_RE.match(str(entry.get("slug", ""))):
+                raise ValueError(f"invalid project: {entry.get('slug')!r}")
+            kinds = {k: bool(entry.get(k)) for k in BORROW_KINDS}
+            if any(kinds.values()):
+                borrow[entry["slug"]] = {"slug": entry["slug"], **kinds}
+        settings["borrow_negatives"] = list(borrow.values())
     return settings
 
 
@@ -71,7 +91,7 @@ def count_dirs(path: Path) -> int:
     return sum(1 for d in path.iterdir() if d.is_dir()) if path.is_dir() else 0
 
 
-def summary(path: Path) -> dict:
+def own_counts(path: Path) -> dict:
     return {
         "positive": count_files(path / "samples" / "positive"),
         "negative": count_files(path / "samples" / "negative"),
@@ -82,9 +102,64 @@ def summary(path: Path) -> dict:
     }
 
 
+def summary(path: Path, data: dict) -> dict:
+    return {**own_counts(path), "borrowed": sum(s["clips"] for s in borrowed_sources(data))}
+
+
+def read(path: Path) -> dict:
+    return json.loads((path / "project.json").read_text(encoding="utf-8"))
+
+
 def load(path: Path) -> dict:
-    data = json.loads((path / "project.json").read_text(encoding="utf-8"))
-    return {**data, "slug": path.name, "summary": summary(path)}
+    data = read(path)
+    return {**data, "slug": path.name, "borrow_negatives": data.get("borrow_negatives", []), "summary": summary(path, data)}
+
+
+def similarity(a: dict, b: dict) -> dict:
+    d = phonetic.word_distance(a.get("tts_phrases") or [a["wake_word"]], a["language"],
+                               b.get("tts_phrases") or [b["wake_word"]], b["language"])
+    return {"distance": d, "level": "conflict" if d <= CONFLICT_MAX else "close" if d <= CLOSE_MAX else "ok"}
+
+
+def borrowed_sources(data: dict) -> list[dict]:
+    """The clip sets a project borrows as negatives, re-checked against the current wake words.
+
+    Each entry: {slug, kind: recordings|synthetic, dirs: [...], clips}. Recordings are WAV folders, synthetic is a
+    corpus shard directory (trainer.tts.corpus). Missing or meanwhile conflicting projects are skipped.
+    """
+    out = []
+    for entry in data.get("borrow_negatives", []):
+        path = PROJECTS / entry["slug"]
+        if not (path / "project.json").is_file():
+            continue
+        other = read(path)
+        if similarity(data, other)["level"] == "conflict":
+            continue
+        if entry.get("recordings"):
+            dirs = [path / "samples" / label for label in ("positive", "negative")]
+            out.append({"slug": entry["slug"], "kind": "recordings", "dirs": dirs, "clips": sum(count_files(d) for d in dirs)})
+        if entry.get("synthetic"):
+            out.append({"slug": entry["slug"], "kind": "synthetic", "dirs": [corpus.corpus_dir(path)],
+                        "clips": corpus.load_index(corpus.corpus_dir(path))["total"]})
+    return out
+
+
+def borrow_candidates(slug: str) -> list[dict]:
+    """All other projects with their clip counts, how close their wake word is and what is borrowed from them."""
+    data = read(project_dir(slug))
+    chosen = {e["slug"]: e for e in data.get("borrow_negatives", [])}
+    out = []
+    for path in sorted(PROJECTS.iterdir()):
+        if path.name == slug or not (path / "project.json").is_file():
+            continue
+        other, counts = read(path), own_counts(path)
+        out.append({
+            "slug": path.name, "wake_word": other["wake_word"], "language": other["language"],
+            "recordings": counts["positive"] + counts["negative"], "synthetic": counts["generated"],
+            **similarity(data, other),
+            "selected": {k: bool(chosen.get(path.name, {}).get(k)) for k in BORROW_KINDS},
+        })
+    return out
 
 
 def write(path: Path, data: dict) -> None:
@@ -125,6 +200,15 @@ def update(slug: str, raw: dict) -> dict:
     path = project_dir(slug)
     data = load(path)
     data.update(clean_settings(raw))
+    # Only a changed selection is validated; a wake word renamed into a conflict just makes borrowed_sources skip it.
+    for entry in data["borrow_negatives"] if raw.get("borrow_negatives") is not None else []:
+        if entry["slug"] == slug:
+            raise ValueError("a project cannot borrow its own clips")
+        other = PROJECTS / entry["slug"]
+        if not (other / "project.json").is_file():
+            raise FileNotFoundError(f"project not found: {entry['slug']}")
+        if similarity(data, read(other))["level"] == "conflict":
+            raise ValueError(f"the wake word of {entry['slug']!r} sounds too much like this one to use its clips as negatives")
     data["updated"] = datetime.now().isoformat(timespec="seconds")
     write(path, data)
     return load(path)

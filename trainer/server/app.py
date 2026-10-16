@@ -54,12 +54,19 @@ async def revalidate_shell(request: Request, call_next):
     return response
 
 
+class BorrowEntry(BaseModel):
+    slug: str
+    recordings: bool = False
+    synthetic: bool = False
+
+
 class ProjectBody(BaseModel):
     wake_word: str | None = None
     language: str | None = None
     tts_phrases: list[str] | None = None
     author: str | None = None
     website: str | None = None
+    borrow_negatives: list[BorrowEntry] | None = None
 
 
 @project_api.get("")
@@ -82,6 +89,11 @@ def get_project(slug: str) -> dict:
 def update_project(slug: str, body: ProjectBody) -> dict:
     with store.LOCK:
         return projects.update(slug, body.model_dump())
+
+
+@project_api.get("/{slug}/borrow")
+def borrow_candidates(slug: str) -> dict:
+    return {"projects": projects.borrow_candidates(slug)}
 
 
 class SessionRef(BaseModel):

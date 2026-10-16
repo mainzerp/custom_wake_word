@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Icon from "../components/Icon.svelte";
+  import BorrowNegatives from "../components/project/BorrowNegatives.svelte";
   import Stepper from "../components/project/Stepper.svelte";
   import Soon from "./Soon.svelte";
   import Studio from "./Studio.svelte";
@@ -82,6 +83,7 @@
         <Generate {project} />
       {:else if current === "record"}
         <Studio />
+        <BorrowNegatives {project} />
       {:else}
         <Soon step={current} />
       {/if}

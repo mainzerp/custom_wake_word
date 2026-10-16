@@ -46,12 +46,31 @@ export interface ProjectSummary extends Counts {
   generated: number;
   runs: number;
   models: number;
+  borrowed: number;
+}
+
+export interface BorrowEntry {
+  slug: string;
+  recordings: boolean;
+  synthetic: boolean;
+}
+
+export interface BorrowCandidate {
+  slug: string;
+  wake_word: string;
+  language: string;
+  recordings: number;
+  synthetic: number;
+  distance: number;
+  level: "ok" | "close" | "conflict";
+  selected: Omit<BorrowEntry, "slug">;
 }
 
 export interface Project extends ProjectSettings {
   slug: string;
   created: string;
   updated: string;
+  borrow_negatives: BorrowEntry[];
   summary: ProjectSummary;
 }
 

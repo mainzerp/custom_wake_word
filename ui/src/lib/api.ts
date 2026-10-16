@@ -1,5 +1,7 @@
 import { slug } from "./state.svelte";
 import type {
+  BorrowCandidate,
+  BorrowEntry,
   Counts,
   GenClip,
   GenerateParams,
@@ -29,7 +31,9 @@ export const projects = {
   list: () => request<{ projects: Project[] }>("/api/projects"),
   get: (slug: string) => request<Project>(`/api/projects/${encodeURIComponent(slug)}`),
   create: (settings: Partial<ProjectSettings>) => post<Project>("/api/projects", settings),
-  update: (slug: string, settings: Partial<ProjectSettings>) => send<Project>("PATCH", `/api/projects/${encodeURIComponent(slug)}`, settings),
+  update: (slug: string, settings: Partial<ProjectSettings> | { borrow_negatives: BorrowEntry[] }) =>
+    send<Project>("PATCH", `/api/projects/${encodeURIComponent(slug)}`, settings),
+  borrowCandidates: (slug: string) => request<{ projects: BorrowCandidate[] }>(`/api/projects/${encodeURIComponent(slug)}/borrow`),
 };
 
 const projectBase = () => `/api/projects/${encodeURIComponent(slug())}`;

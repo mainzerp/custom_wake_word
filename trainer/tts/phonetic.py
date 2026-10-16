@@ -9,7 +9,8 @@ of one class, voiced/voiceless pairs, ...) cost less, normalized by the target l
   distance >= NEGATIVE_MIN            -> negative candidate (sounds clearly different, e.g. TTS slips like "Davis"),
                                          unless the wake word is contained in the clip (then gray)
 
-Runs in the OmniVoice venv (torch); the target pronunciation needs the espeak-ng binary.
+PhoneChecker runs in the OmniVoice venv (torch); the target pronunciation needs the espeak-ng binary. The spelling
+helpers (phrase_phones, word_distance) only need numpy and espeak-ng and also run in the server.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import dataclass
+from functools import lru_cache
 
 import numpy as np
 
@@ -126,6 +128,25 @@ def contained_distance(phones: list[str], target: list[str]) -> float:
             cur.append(min(prev[i] + wb * indel_cost(b), cur[i - 1] + indel_cost(a), prev[i - 1] + wb * sub_cost(a, b)))
         prev = cur
     return min(prev) / sum(w)
+
+
+@lru_cache(maxsize=512)
+def phrase_phones(text: str, language: str) -> tuple[str, ...]:
+    """espeak-ng phones of a spelling without the recognizer's inventory (for comparing two spellings)."""
+    ipa = espeak_ipa(text, language).replace(" ", "").replace("_", "")
+    vocab = set(ipa) | UNITS | {c + "ː" for c in ipa}
+    return tuple(tokenize(ipa, vocab))
+
+
+def word_distance(a: list[str], language_a: str, b: list[str], language_b: str) -> float:
+    """Smallest symmetric phone distance between any spelling of wake word a and any spelling of b."""
+    best = 1.0
+    for x in a:
+        for y in b:
+            pa, pb = list(phrase_phones(x, language_a)), list(phrase_phones(y, language_b))
+            # contained: "Hey Jarvis" holds "Jarvis" entirely, which is just as conflicting as the same word
+            best = min(best, distance(pa, pb), distance(pb, pa), contained_distance(pa, pb), contained_distance(pb, pa))
+    return round(best, 3)
 
 
 @dataclass

@@ -32,7 +32,7 @@ export function stepState(id: StepId, p: Project): { done: boolean; metric: stri
     case "generate":
       return { done: s.generated > 0, metric: `${s.generated.toLocaleString()} clips` };
     case "record":
-      return { done: s.positive > 0, metric: `${s.positive} pos · ${s.negative} neg` };
+      return { done: s.positive > 0, metric: `${s.positive} pos · ${s.negative + s.borrowed} neg` };
     case "train":
       return { done: s.runs > 0, metric: `${s.runs} runs` };
     case "mining":

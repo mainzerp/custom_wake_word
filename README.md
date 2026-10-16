@@ -55,7 +55,7 @@ Data layout below `data/`:
 
 | Path | Content |
 |---|---|
-| `projects/<slug>/project.json` | Project settings: `wake_word`, `language`, `tts_phrases`, `author`, `website` |
+| `projects/<slug>/project.json` | Project settings: `wake_word`, `language`, `tts_phrases`, `author`, `website`, `borrow_negatives` (other projects whose recordings and/or synthetic clips count as negatives here; referenced, not copied; refused when the wake words are within phone distance 0.35, see `trainer/projects.py`) |
 | `projects/<slug>/recordings/<YYYYMMDD-HHMMSS>/` | Sample Studio takes: `recording.wav`, `clips/`, `clips.json`, `session.json` |
 | `projects/<slug>/samples/positive/`, `.../negative/` | Sorted real clips (16 kHz mono PCM16). A clip's label is the folder holding its copy |
 | `projects/<slug>/generated/tts/` | Synthetic corpus: `corpus.json` index + `shard-*.npz` (int16 clips concatenated, offsets, voice, phrase, speed/design/steps), see `trainer/tts/corpus.py` |
