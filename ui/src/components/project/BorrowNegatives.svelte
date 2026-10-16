@@ -1,5 +1,6 @@
 <script lang="ts">
   import { projects } from "../../lib/api";
+  import { locale, t } from "../../lib/i18n.svelte";
   import { href } from "../../lib/router.svelte";
   import { app, setProject, toastError } from "../../lib/state.svelte";
   import type { BorrowCandidate, BorrowEntry, Project } from "../../lib/types";
@@ -39,8 +40,8 @@
   }
 
   const kinds: { kind: Kind; label: string; count: (c: BorrowCandidate) => number }[] = [
-    { kind: "recordings", label: "recordings", count: (c) => c.recordings },
-    { kind: "synthetic", label: "synthetic", count: (c) => c.synthetic },
+    { kind: "recordings", get label() { return t("recordings"); }, count: (c) => c.recordings },
+    { kind: "synthetic", get label() { return t("synthetic"); }, count: (c) => c.synthetic },
   ];
 
   refresh();
@@ -49,20 +50,24 @@
 <section class="panel borrow">
   <div class="head">
     <div>
-      <span class="eyebrow">Negatives from other projects</span>
+      <span class="eyebrow">{t("Negatives from other projects")}</span>
       <p class="dim">
-        Clips of your other wake words are perfect negatives here: real voices, real rooms, and a different word. They are
-        referenced, not copied, so new clips in those projects count automatically.
+        {t(
+          "Clips of your other wake words are perfect negatives here: real voices, real rooms, and a different word. They are referenced, not copied, so new clips in those projects count automatically.",
+        )}
       </p>
     </div>
     <div class="total">
-      <strong class="mono">{project.summary.borrowed.toLocaleString()}</strong>
-      <span class="faint">borrowed clips</span>
+      <strong class="mono">{project.summary.borrowed.toLocaleString(locale())}</strong>
+      <span class="faint">{t("borrowed clips")}</span>
     </div>
   </div>
 
   {#if loaded && candidates.length === 0}
-    <p class="faint empty">No other projects yet. <a href={href.new}>Create another wake word</a> and its clips can be used here.</p>
+    <p class="faint empty">
+      {t("No other projects yet.")} <a href={href.new}>{t("Create another wake word")}</a>
+      {t("and its clips can be used here.")}
+    </p>
   {:else}
     <ul>
       {#each candidates as c (c.slug)}
@@ -71,9 +76,9 @@
             <a href={href.project(c.slug)}>{c.wake_word}</a>
             <span class="chip">{c.language}</span>
             {#if c.level === "conflict"}
-              <span class="chip neg" title="Phone distance {c.distance}">sounds like {project.wake_word}</span>
+              <span class="chip neg" title={t("Phone distance {distance}", { distance: c.distance })}>{t("sounds like {word}", { word: project.wake_word })}</span>
             {:else if c.level === "close"}
-              <span class="chip warn" title="Phone distance {c.distance}">similar sound: hard negatives</span>
+              <span class="chip warn" title={t("Phone distance {distance}", { distance: c.distance })}>{t("similar sound: hard negatives")}</span>
             {/if}
           </div>
           <div class="kinds">
@@ -85,7 +90,7 @@
                   disabled={busy || c.level === "conflict"}
                   onchange={() => toggle(c, k.kind)}
                 />
-                <span><span class="mono">{k.count(c).toLocaleString()}</span> {k.label}</span>
+                <span><span class="mono">{k.count(c).toLocaleString(locale())}</span> {k.label}</span>
               </label>
             {/each}
           </div>
@@ -94,8 +99,8 @@
     </ul>
     {#if candidates.some((c) => c.level === "conflict")}
       <p class="faint note">
-        Projects whose wake word sounds like <span class="mono">{project.wake_word}</span> cannot be borrowed: their clips
-        would teach the model that its own wake word is a negative.
+        {t("Projects whose wake word sounds like")} <span class="mono">{project.wake_word}</span>
+        {t("cannot be borrowed: their clips would teach the model that its own wake word is a negative.")}
       </p>
     {/if}
   {/if}

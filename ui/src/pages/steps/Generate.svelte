@@ -5,6 +5,7 @@
   import ConfusableRun from "../../components/project/ConfusableRun.svelte";
   import JobStats from "../../components/project/JobStats.svelte";
   import { generate, jobs } from "../../lib/api";
+  import { locale, plural, t } from "../../lib/i18n.svelte";
   import { href } from "../../lib/router.svelte";
   import { app, toast, toastError } from "../../lib/state.svelte";
   import type { GenClip, GenerateParams, GenerateStatus, Project } from "../../lib/types";
@@ -48,8 +49,8 @@
         app.project.summary.confusable = s.confusables.total;
       }
       if (wasRunning && s.job && !s.job.alive) {
-        if (s.job.state === "failed") toastError(s.job.message ?? "Generation failed");
-        else toast(s.job.state === "done" ? `Done: ${s.corpus.total.toLocaleString()} synthetic clips.` : "Generation stopped.");
+        if (s.job.state === "failed") toastError(s.job.message ? t(s.job.message) : t("Generation failed"));
+        else toast(s.job.state === "done" ? t("Done: {n} synthetic clips.", { n: s.corpus.total }) : t("Generation stopped."));
         if (s.corpus.total) drawSamples();
       }
     } catch (e) {
@@ -88,14 +89,14 @@
   }
 
   async function reset() {
-    if (!confirm(`Delete all ${total.toLocaleString()} synthetic clips of "${project.wake_word}"? Own recordings are not affected.`)) return;
+    if (!confirm(t("Delete all {n} synthetic clips of \"{word}\"? Own recordings are not affected.", { n: total, word: project.wake_word }))) return;
     const s = await act(() => generate.reset());
     if (s) {
       status = s;
       samples = [];
       negSamples = [];
       if (app.project) app.project.summary.generated = 0;
-      toast("Synthetic corpus deleted.");
+      toast(t("Synthetic corpus deleted."));
     }
   }
 
@@ -119,7 +120,7 @@
       : null,
   );
   const startLabel = $derived(
-    total >= params.count ? "Target reached" : total ? `Continue to ${params.count.toLocaleString()}` : `Generate ${params.count.toLocaleString()} clips`,
+    total >= params.count ? t("Target reached") : total ? t("Continue to {n}", { n: params.count }) : t("Generate {n} clips", { n: params.count }),
   );
 
   $effect(() => {
@@ -131,75 +132,75 @@
 <div class="page">
   {#if !status.engine.voices}
     <section class="panel note">
-      <span class="chip warn"><span class="dot"></span>No reference voices</span>
-      <p>There is no voice bank for this language yet, so every clip uses a designed voice (less natural variety).</p>
+      <span class="chip warn"><span class="dot"></span>{t("No reference voices")}</span>
+      <p>{t("There is no voice bank for this language yet, so every clip uses a designed voice (less natural variety).")}</p>
     </section>
   {/if}
   <div class="top">
     <section class="panel run">
       <div class="head">
-        <span class="eyebrow">Run</span>
+        <span class="eyebrow">{t("Run")}</span>
         <span class="chip mono" title="{status.engine.model} ({status.engine.license})">
-          {status.engine.name} · {status.engine.voices} voices
+          {status.engine.name} · {plural(status.engine.voices, "{n} voice", "{n} voices")}
         </span>
       </div>
 
       <div class="field-block">
-        <span class="label">Target clips</span>
+        <span class="label">{t("Target clips")}</span>
         <div class="presets">
           {#each PRESETS as p (p)}
             <button class="small" class:sel={params.count === p} onclick={() => (params.count = p)} disabled={running}>{p / 1000}k</button>
           {/each}
-          <input type="number" class="mono" min="100" step="1000" bind:value={params.count} disabled={running} aria-label="Target clips" />
+          <input type="number" class="mono" min="100" step="1000" bind:value={params.count} disabled={running} aria-label={t("Target clips")} />
         </div>
-        <p class="hint faint">Generation tops the corpus up to this number, so you can always continue later.</p>
+        <p class="hint faint">{t("Generation tops the corpus up to this number, so you can always continue later.")}</p>
       </div>
 
       <div class="field-block">
-        <span class="label">Tempo <span class="faint">(speed factor, higher = faster)</span></span>
+        <span class="label">{t("Tempo")} <span class="faint">{t("(speed factor, higher = faster)")}</span></span>
         <div class="range">
-          <input type="number" class="mono" step="0.05" min="0.5" max="2" bind:value={params.speed.lo} disabled={running} aria-label="Tempo min" />
-          <span class="faint">to</span>
-          <input type="number" class="mono" step="0.05" min="0.5" max="2" bind:value={params.speed.hi} disabled={running} aria-label="Tempo max" />
+          <input type="number" class="mono" step="0.05" min="0.5" max="2" bind:value={params.speed.lo} disabled={running} aria-label={t("Tempo min")} />
+          <span class="faint">{t("to")}</span>
+          <input type="number" class="mono" step="0.05" min="0.5" max="2" bind:value={params.speed.hi} disabled={running} aria-label={t("Tempo max")} />
         </div>
       </div>
 
       <label class="check">
         <input type="checkbox" bind:checked={params.filter} disabled={running} />
         <span>
-          Phonetic check
-          <span class="faint">(keep close clips, drop the gray zone, store clearly different ones as negative candidates)</span>
+          {t("Phonetic check")}
+          <span class="faint">{t("(keep close clips, drop the gray zone, store clearly different ones as negative candidates)")}</span>
         </span>
       </label>
 
       <button class="ghost toggle" onclick={() => (advanced = !advanced)}>
-        <Icon name="sliders" size={16} /> Advanced
+        <Icon name="sliders" size={16} /> {t("Advanced")}
         <span class="chev" class:open={advanced}><Icon name="chevron" size={14} /></span>
       </button>
       {#if advanced}
         <div class="adv">
-          <span class="label">Quality <span class="faint">(diffusion steps; 32 is ~2× slower)</span></span>
+          <span class="label">{t("Quality")} <span class="faint">{t("(diffusion steps; 32 is ~2× slower)")}</span></span>
           <div class="presets">
             {#each [16, 32] as s (s)}
               <button class="small" class:sel={params.steps === s} onclick={() => (params.steps = s)} disabled={running}>
-                {s === 16 ? "Fast (16)" : "Best (32)"}
+                {s === 16 ? t("Fast (16)") : t("Best (32)")}
               </button>
             {/each}
           </div>
-          <span class="label">Designed voices <span class="faint">(share of batches without a reference voice)</span></span>
+          <span class="label">{t("Designed voices")} <span class="faint">{t("(share of batches without a reference voice)")}</span></span>
           <div class="range">
-            <input type="range" min="0" max="1" step="0.05" bind:value={params.design_share} disabled={running} aria-label="Designed voices share" />
+            <input type="range" min="0" max="1" step="0.05" bind:value={params.design_share} disabled={running} aria-label={t("Designed voices share")} />
             <span class="mono">{Math.round(params.design_share * 100)}%</span>
           </div>
           <button class="ghost small" onclick={() => (params = { ...structuredClone(DEFAULTS), count: params.count })} disabled={running}>
-            Restore defaults
+            {t("Restore defaults")}
           </button>
         </div>
       {/if}
 
       <div class="actions">
         {#if running}
-          <button class="danger" onclick={stop} disabled={busy}><Icon name="stop" size={15} /> Stop</button>
+          <button class="danger" onclick={stop} disabled={busy}><Icon name="stop" size={15} /> {t("Stop")}</button>
         {:else}
           <button class="primary" onclick={start} disabled={busy || !!otherJob || total >= params.count}>
             <Icon name="sparkles" size={16} /> {startLabel}
@@ -207,56 +208,56 @@
         {/if}
       </div>
       {#if otherJob}
-        <p class="hint warn">The GPU is busy: {otherJob.kind} job of "{otherJob.project}" is running.</p>
+        <p class="hint warn">{t("The GPU is busy: {kind} job of \"{project}\" is running.", { kind: otherJob.kind, project: otherJob.project })}</p>
       {/if}
       {#if phrasesChanged}
-        <p class="hint warn">New spellings were added since the last run; they are used for newly generated clips only.</p>
+        <p class="hint warn">{t("New spellings were added since the last run; they are used for newly generated clips only.")}</p>
       {/if}
       <p class="hint faint">
-        Spellings: {project.tts_phrases.join(", ")} ·
-        <a class="small-link" href={href.project(project.slug, "wakeword")}>check pronunciation in step 1</a>
+        {t("Spellings: {list}", { list: project.tts_phrases.join(", ") })} ·
+        <a class="small-link" href={href.project(project.slug, "wakeword")}>{t("check pronunciation in step 1")}</a>
       </p>
     </section>
 
     <section class="panel progress">
       <div class="head">
-        <span class="eyebrow">Corpus</span>
+        <span class="eyebrow">{t("Corpus")}</span>
         {#if job}
           <span class="chip {job.state === 'failed' ? 'neg' : running ? 'pos' : ''}">
-            <span class="dot" class:blink={running}></span>{job.state}
+            <span class="dot" class:blink={running}></span>{t(job.state)}
           </span>
         {/if}
       </div>
       <div class="big">
-        <div><strong class="mono">{(running ? Math.max(total, job?.done ?? 0) : total).toLocaleString()}</strong><span class="dim">clips</span></div>
-        <div><strong class="mono">{hours(status.corpus.seconds)}</strong><span class="dim">hours of audio</span></div>
+        <div><strong class="mono">{(running ? Math.max(total, job?.done ?? 0) : total).toLocaleString(locale())}</strong><span class="dim">{t("clips")}</span></div>
+        <div><strong class="mono">{hours(status.corpus.seconds)}</strong><span class="dim">{t("hours of audio")}</span></div>
         <div class="neg">
-          <strong class="mono">{(running ? Math.max(status.negatives.total, job?.negatives ?? 0) : status.negatives.total).toLocaleString()}</strong>
-          <span class="dim">negative candidates</span>
+          <strong class="mono">{(running ? Math.max(status.negatives.total, job?.negatives ?? 0) : status.negatives.total).toLocaleString(locale())}</strong>
+          <span class="dim">{t("negative candidates")}</span>
         </div>
       </div>
 
       {#if job}
-        <div class="bar" aria-label="Progress {pct.toFixed(0)}%">
+        <div class="bar" aria-label={t("Progress {pct}%", { pct: pct.toFixed(0) })}>
           <span class="prev" style:width="{startPct}%"></span>
           <span class="fill" class:live={running} style:left="{startPct}%" style:width="{Math.max(0, pct - startPct)}%"></span>
         </div>
-        <JobStats {job} {running} dropTitle="Dropped by length or in the gray zone of the phonetic check"
-          dropNote={filterRate != null ? `${filterRate}% gray zone` : ""} />
+        <JobStats {job} {running} dropTitle={t("Dropped by length or in the gray zone of the phonetic check")}
+          dropNote={filterRate != null ? t("{pct}% gray zone", { pct: filterRate }) : ""} />
         {#if job.state === "failed" && job.message}
-          <p class="hint err">{job.message}</p>
+          <p class="hint err">{t(job.message)}</p>
         {/if}
         <button class="ghost toggle" onclick={() => (showLog = !showLog)}>
-          Log <span class="chev" class:open={showLog}><Icon name="chevron" size={14} /></span>
+          {t("Log")} <span class="chev" class:open={showLog}><Icon name="chevron" size={14} /></span>
         </button>
         {#if showLog}
-          <pre class="log mono">{job.log || "(empty)"}</pre>
+          <pre class="log mono">{job.log || t("(empty)")}</pre>
         {/if}
       {:else}
-        <p class="dim">No run yet. OmniVoice makes ~5 clips/s on the RTX 3090, so 20k clips take about an hour.</p>
+        <p class="dim">{t("No run yet. OmniVoice makes ~5 clips/s on the RTX 3090, so 20k clips take about an hour.")}</p>
       {/if}
       {#if total && !running}
-        <button class="danger small reset" onclick={reset} disabled={busy}><Icon name="trash" size={14} /> Delete corpus</button>
+        <button class="danger small reset" onclick={reset} disabled={busy}><Icon name="trash" size={14} /> {t("Delete corpus")}</button>
       {/if}
     </section>
   </div>
@@ -265,10 +266,10 @@
     <section class="panel block">
       <div class="head">
         <div>
-          <span class="eyebrow">Listen to the corpus</span>
-          <p class="dim sub">Random clips from the generated set. Click to play.</p>
+          <span class="eyebrow">{t("Listen to the corpus")}</span>
+          <p class="dim sub">{t("Random clips from the generated set. Click to play.")}</p>
         </div>
-        <button class="small" onclick={drawSamples} disabled={busy}><Icon name="replay" size={14} /> Draw 12</button>
+        <button class="small" onclick={drawSamples} disabled={busy}><Icon name="replay" size={14} /> {t("Draw 12")}</button>
       </div>
       <div class="grid">
         {#each samples as c (c.url)}
@@ -284,17 +285,16 @@
     <section class="panel block">
       <div class="head">
         <div>
-          <span class="eyebrow">Negative candidates</span>
+          <span class="eyebrow">{t("Negative candidates")}</span>
           <p class="dim sub">
-            TTS clips that came out clearly different from every spelling (Δ ≥ 0.70, wake word not contained). They can
-            serve as extra negatives in training; listen to make sure none of them sounds like the wake word.
+            {t("TTS clips that came out clearly different from every spelling (Δ ≥ 0.70, wake word not contained). They can serve as extra negatives in training; listen to make sure none of them sounds like the wake word.")}
           </p>
         </div>
-        <button class="small" onclick={drawNegatives} disabled={busy}><Icon name="replay" size={14} /> Draw 12</button>
+        <button class="small" onclick={drawNegatives} disabled={busy}><Icon name="replay" size={14} /> {t("Draw 12")}</button>
       </div>
       <div class="grid">
         {#each negSamples as c (c.url)}
-          <MiniClip url={c.url} label={voiceLabel(c.voice)} detail={clipDetail(c)} note="asked for: {c.phrase ?? ''}" miss />
+          <MiniClip url={c.url} label={voiceLabel(c.voice)} detail={clipDetail(c)} note={t("asked for: {phrase}", { phrase: c.phrase ?? "" })} miss />
         {/each}
       </div>
     </section>

@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import Icon from "../Icon.svelte";
   import { tts } from "../../lib/api";
+  import { t } from "../../lib/i18n.svelte";
   import { toastError } from "../../lib/state.svelte";
   import type { SoundAlike } from "../../lib/types";
 
@@ -45,7 +46,7 @@
     try {
       const res = await tts.soundAlikes(language, valid, [...words], 24);
       suggestions = res.suggestions;
-      if (!suggestions.length) toastError("No further sound-alikes found.");
+      if (!suggestions.length) toastError(t("No further sound-alikes found."));
     } catch (e) {
       toastError(e);
     } finally {
@@ -74,17 +75,15 @@
 <div class="alikes">
   <div class="head">
     <div>
-      <span class="eyebrow">Sound-alikes <span class="faint">(negatives)</span></span>
+      <span class="eyebrow">{t("Sound-alikes")} <span class="faint">{t("(negatives)")}</span></span>
       <p class="dim small">
-        Words that sound close to the wake word but are not it, e.g. <span class="mono">Davis</span> or
-        <span class="mono">Marvin</span>. The synthetic step speaks them with all voices, so the model learns to tell them
-        apart. Δ is the phone distance to the closest spelling: up to 0.35 they count as the wake word itself and are refused,
-        0.35–0.65 are the useful hard negatives.
+        {t("Words that sound close to the wake word but are not it, e.g.")} <span class="mono">Davis</span> {t("or")}
+        <span class="mono">Marvin</span>. {t("The synthetic step speaks them with all voices, so the model learns to tell them apart. Δ is the phone distance to the closest spelling: up to 0.35 they count as the wake word itself and are refused, 0.35–0.65 are the useful hard negatives.")}
       </p>
     </div>
     <button class="small" onclick={suggest} disabled={busy || !valid.length}>
       <Icon name="sparkles" size={14} />
-      {busy ? "Searching…" : "Suggest"}
+      {busy ? t("Searching…") : t("Suggest")}
     </button>
   </div>
 
@@ -92,30 +91,30 @@
     <ul class="chips">
       {#each words as w, i (w)}
         {@const s = scores[w]}
-        <li class="word {s?.level ?? ''}" title={s?.level === "conflict" ? "Sounds like the wake word itself" : s?.level === "far" ? "Far away: generic speech covers it already" : ""}>
+        <li class="word {s?.level ?? ''}" title={s?.level === "conflict" ? t("Sounds like the wake word itself") : s?.level === "far" ? t("Far away: generic speech covers it already") : ""}>
           <span>{w}</span>
           <span class="mono d">Δ {fmt(s)}</span>
-          <button class="ghost x" onclick={() => words.splice(i, 1)} aria-label="Remove {w}"><Icon name="x" size={12} /></button>
+          <button class="ghost x" onclick={() => words.splice(i, 1)} aria-label={t("Remove {word}", { word: w })}><Icon name="x" size={12} /></button>
         </li>
       {/each}
     </ul>
   {:else}
-    <p class="faint small">None yet. Hit Suggest, or type your own below.</p>
+    <p class="faint small">{t("None yet. Hit Suggest, or type your own below.")}</p>
   {/if}
   {#if conflicts.length}
-    <p class="hint err">Remove {conflicts.join(", ")}: too close to the wake word, saving is refused.</p>
+    <p class="hint err">{t("Remove {words}: too close to the wake word, saving is refused.", { words: conflicts.join(", ") })}</p>
   {/if}
 
   {#if suggestions.length}
     <div class="suggest">
       <div class="suggest-head">
-        <span class="label">Suggestions <span class="faint">(click to add)</span></span>
-        <button class="ghost small" onclick={() => add(suggestions.map((s) => s.text))}><Icon name="plus" size={14} /> Add all</button>
+        <span class="label">{t("Suggestions")} <span class="faint">{t("(click to add)")}</span></span>
+        <button class="ghost small" onclick={() => add(suggestions.map((s) => s.text))}><Icon name="plus" size={14} /> {t("Add all")}</button>
       </div>
       <ul class="chips">
         {#each suggestions as s (s.text)}
           <li>
-            <button class="word sug" onclick={() => add([s.text])} title={s.kind === "word" ? "Real word from the voice bank" : `Letter edit (${s.kind})`}>
+            <button class="word sug" onclick={() => add([s.text])} title={s.kind === "word" ? t("Real word from the voice bank") : t("Letter edit ({kind})", { kind: t(s.kind ?? "") })}>
               <Icon name="plus" size={12} />
               <span>{s.text}</span>
               <span class="mono d">Δ {fmt(s)}</span>
@@ -127,8 +126,8 @@
   {/if}
 
   <form class="add" onsubmit={(e) => (e.preventDefault(), addDraft())}>
-    <input bind:value={draft} maxlength="200" placeholder="Add sound-alikes (comma separated)" />
-    <button type="submit" class="small" disabled={!draft.trim()}><Icon name="plus" size={14} /> Add</button>
+    <input bind:value={draft} maxlength="200" placeholder={t("Add sound-alikes (comma separated)")} />
+    <button type="submit" class="small" disabled={!draft.trim()}><Icon name="plus" size={14} /> {t("Add")}</button>
   </form>
 </div>
 

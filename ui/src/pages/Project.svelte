@@ -2,15 +2,19 @@
   import { untrack } from "svelte";
   import Icon from "../components/Icon.svelte";
   import BorrowNegatives from "../components/project/BorrowNegatives.svelte";
+  import NextStep from "../components/project/NextStep.svelte";
   import Stepper from "../components/project/Stepper.svelte";
   import Soon from "./Soon.svelte";
   import Studio from "./Studio.svelte";
   import Generate from "./steps/Generate.svelte";
+  import Mining from "./steps/Mining.svelte";
   import Train from "./steps/Train.svelte";
   import WakeWord from "./steps/WakeWord.svelte";
   import { projects } from "../lib/api";
+  import { guide, refreshGuide } from "../lib/guide.svelte";
+  import { locale, t } from "../lib/i18n.svelte";
   import { href } from "../lib/router.svelte";
-  import { STEPS, nextStep, stepIndex, type StepId } from "../lib/steps";
+  import { STEPS, isStep, nextStep, stepIndex, type StepId } from "../lib/steps";
   import { app, setProject, toastError } from "../lib/state.svelte";
   import { LANGUAGES } from "../lib/types";
 
@@ -18,10 +22,21 @@
 
   let missing = $state(false);
   const project = $derived(app.project?.slug === slug ? app.project : null);
-  const current = $derived(step ?? (project ? nextStep(project) : null));
+  const current = $derived(step);
   const info = $derived(current ? STEPS[stepIndex(current)] : null);
   const prev = $derived(current ? STEPS[stepIndex(current) - 1] : undefined);
-  const next = $derived(current ? STEPS[stepIndex(current) + 1] : undefined);
+  // The footer follows the guide when it points elsewhere (the workflow loops: mining leads back to training).
+  const advice = $derived(guide.slug === slug ? guide.data?.next : null);
+  const next = $derived(
+    current
+      ? advice && advice.step !== current && STEPS.some((s) => s.id === advice.step)
+        ? STEPS.find((s) => s.id === advice.step)
+        : STEPS[stepIndex(current) + 1]
+      : undefined,
+  );
+  const s = $derived(project?.summary);
+  const wakeClips = $derived(s ? s.generated + s.positive : 0);
+  const negClips = $derived(s ? s.negative + s.confusable + s.mined + s.borrowed : 0);
 
   $effect(() => {
     const s = slug;
@@ -39,41 +54,64 @@
     });
   });
 
+  // Opening a project without a step goes where the guide points (a running job, the loop's next stage, ...).
   $effect(() => {
-    if (project && !step) location.replace(href.project(project.slug, nextStep(project)));
+    if (!project || step) return;
+    const p = project;
+    untrack(async () => {
+      await refreshGuide(p.slug);
+      const advised = guide.slug === p.slug ? guide.data?.next.step : undefined;
+      if (!step) location.replace(href.project(p.slug, advised && isStep(advised) ? advised : nextStep(p)));
+    });
+  });
+
+  // Guide: on every step change and every few seconds (jobs finish, labels change in the background).
+  $effect(() => {
+    const sl = slug;
+    void current;
+    untrack(() => refreshGuide(sl));
+    const id = setInterval(() => refreshGuide(sl), 5000);
+    return () => clearInterval(id);
   });
 </script>
 
 {#if missing}
   <section class="panel empty">
-    <h2>Project not found</h2>
-    <p class="dim"><a href={href.home}>Back to all wake words</a></p>
+    <h2>{t("Project not found")}</h2>
+    <p class="dim"><a href={href.home}>{t("Back to all wake words")}</a></p>
   </section>
 {:else if project && current && info}
   <div class="project">
     <header>
       <div>
-        <a class="crumb" href={href.home}><Icon name="grid" size={14} /> All wake words</a>
+        <a class="crumb" href={href.home}><Icon name="grid" size={14} /> {t("All wake words")}</a>
         <h1>{project.wake_word}</h1>
         <div class="meta">
-          <span class="chip">{LANGUAGES[project.language] ?? project.language}</span>
-          {#each project.tts_phrases.filter((p) => p !== project.wake_word) as p (p)}<span class="chip pos" title="TTS spelling">{p}</span>{/each}
+          <span class="chip">{LANGUAGES[project.language] ? t(LANGUAGES[project.language]) : project.language}</span>
+          {#each project.tts_phrases.filter((p) => p !== project.wake_word) as p (p)}<span class="chip pos" title={t("TTS spelling")}>{p}</span>{/each}
         </div>
       </div>
       <div class="stats">
-        <div class="stat pos"><span class="eyebrow">Positive</span><strong class="mono">{project.summary.positive}</strong></div>
-        <div class="stat neg"><span class="eyebrow">Negative</span><strong class="mono">{project.summary.negative}</strong></div>
-        <div class="stat"><span class="eyebrow">Synthetic</span><strong class="mono">{project.summary.generated.toLocaleString()}</strong></div>
+        <div class="stat pos" title={t("{synthetic} synthetic + {own} own recordings", { synthetic: project.summary.generated, own: project.summary.positive })}>
+          <span class="eyebrow">{t("Wake word clips")}</span><strong class="mono">{wakeClips.toLocaleString(locale())}</strong>
+        </div>
+        <div class="stat neg" title={t("{alike} sound-alikes + {mined} mined false triggers + {own} own recordings + {borrowed} borrowed; plus the shared speech and noise datasets", { alike: project.summary.confusable, mined: project.summary.mined, own: project.summary.negative, borrowed: project.summary.borrowed })}>
+          <span class="eyebrow">{t("Negative clips")}</span><strong class="mono">{negClips.toLocaleString(locale())}</strong>
+        </div>
+        <div class="stat" title={t("Finished training runs with a model")}><span class="eyebrow">{t("Models")}</span><strong class="mono">{project.summary.runs}</strong></div>
       </div>
     </header>
 
     <Stepper {project} {current} />
 
+    <NextStep slug={project.slug} {current} />
+
     <div class="step-head">
       <div>
-        <span class="eyebrow">Step {stepIndex(current) + 1} of {STEPS.length}{"optional" in info && info.optional ? " · optional" : ""}</span>
-        <h2>{info.label}</h2>
-        <p class="dim">{info.sub}</p>
+        <span class="eyebrow">{t("Step {n} of {total}", { n: stepIndex(current) + 1, total: STEPS.length })}{"optional" in info && info.optional ? ` · ${t("optional")}` : ""}</span>
+        <h2>{t(info.label)}</h2>
+        <p class="dim">{t(info.sub)}</p>
+        <p class="how">{t(info.how)}</p>
       </div>
     </div>
 
@@ -84,6 +122,8 @@
         <Generate {project} />
       {:else if current === "train"}
         <Train {project} />
+      {:else if current === "mining"}
+        <Mining {project} />
       {:else if current === "record"}
         <Studio />
         <BorrowNegatives {project} />
@@ -94,12 +134,12 @@
 
     <footer>
       {#if prev}
-        <a class="navbtn" href={href.project(project.slug, prev.id)}><Icon name="back" size={16} /> {prev.label}</a>
+        <a class="navbtn" href={href.project(project.slug, prev.id)}><Icon name="back" size={16} /> {t(prev.label)}</a>
       {:else}
         <span></span>
       {/if}
       {#if next}
-        <a class="navbtn primary" href={href.project(project.slug, next.id)}>Next: {next.label} <Icon name="next" size={16} /></a>
+        <a class="navbtn primary" href={href.project(project.slug, next.id)}>{t("Next: {step}", { step: t(next.label) })} <Icon name="next" size={16} /></a>
       {/if}
     </footer>
   </div>
@@ -175,6 +215,12 @@
   }
   .step-head p {
     margin: 6px 0 0;
+  }
+  .step-head .how {
+    max-width: 900px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-faint);
   }
   footer {
     display: flex;

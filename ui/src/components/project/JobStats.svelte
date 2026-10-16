@@ -1,5 +1,6 @@
 <script lang="ts">
   import { duration, finishAt } from "../../lib/format";
+  import { locale, t } from "../../lib/i18n.svelte";
   import { STALE_AFTER } from "../../lib/jobs";
   import type { Job } from "../../lib/types";
 
@@ -17,26 +18,28 @@
 </script>
 
 {#if loading}
-  <p class="dim small"><span class="spin"></span>{job.message ?? "Loading the model"} · {duration(job.elapsed)}</p>
+  <p class="dim small"><span class="spin"></span>{job.message ? t(job.message) : t("Loading the model")} · {duration(job.elapsed)}</p>
 {:else}
   <div class="stats mono">
-    <span><strong>{(job.done ?? 0).toLocaleString()}</strong> / {(job.total ?? 0).toLocaleString()} ({pct.toFixed(1)}%)</span>
-    <span title="New clips in this run">+{added.toLocaleString()} this run</span>
-    <span>{job.rate ?? 0} clips/s</span>
-    <span class="faint" title={dropTitle}>{(job.rejected ?? 0) + (job.filtered ?? 0)} dropped{dropNote ? ` (${dropNote})` : ""}</span>
+    <span><strong>{(job.done ?? 0).toLocaleString(locale())}</strong> / {(job.total ?? 0).toLocaleString(locale())} ({pct.toFixed(1)}%)</span>
+    <span title={t("New clips in this run")}>{t("+{n} this run", { n: added })}</span>
+    <span>{t("{rate} clips/s", { rate: job.rate ?? 0 })}</span>
+    <span class="faint" title={dropTitle}>{dropNote
+        ? t("{n} dropped ({note})", { n: (job.rejected ?? 0) + (job.filtered ?? 0), note: dropNote })
+        : t("{n} dropped", { n: (job.rejected ?? 0) + (job.filtered ?? 0) })}</span>
   </div>
   <div class="stats mono">
     {#if running}
-      <span>running {duration(job.elapsed)}</span>
-      <span class="eta">ETA {duration(job.eta)}</span>
-      <span title="Estimated finish time at the current rate">done ≈ {finishAt(job.eta)}</span>
+      <span>{t("running {time}", { time: duration(job.elapsed) })}</span>
+      <span class="eta">{t("ETA {time}", { time: duration(job.eta) })}</span>
+      <span title={t("Estimated finish time at the current rate")}>{t("done ≈ {time}", { time: finishAt(job.eta) })}</span>
     {:else if job.elapsed != null}
-      <span>{job.state} after {duration(job.elapsed)}</span>
+      <span>{t("{state} after {time}", { state: t(job.state), time: duration(job.elapsed) })}</span>
     {/if}
   </div>
 {/if}
 {#if stale}
-  <p class="hint warn">No progress update for {duration(job.age)}. The worker may hang; check the log.</p>
+  <p class="hint warn">{t("No progress update for {time}. The worker may hang; check the log.", { time: duration(job.age) })}</p>
 {/if}
 
 <style>

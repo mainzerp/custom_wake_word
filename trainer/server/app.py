@@ -16,9 +16,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from trainer import jobs, projects
+from trainer import guide, jobs, projects
 from trainer.paths import UI_DIST
-from trainer.server import generate_api, train_api
+from trainer.server import generate_api, mining_api, setup_api, train_api
 from trainer.studio import store
 
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
@@ -72,7 +72,13 @@ class ProjectBody(BaseModel):
 
 @project_api.get("")
 def list_projects() -> dict:
-    return {"projects": projects.list_projects()}
+    out = projects.list_projects()
+    for p in out:
+        try:
+            p["next"] = guide.guide(projects.project_dir(p["slug"]))["next"]
+        except (OSError, ValueError, KeyError):
+            p["next"] = None
+    return {"projects": out}
 
 
 @project_api.post("")
@@ -90,6 +96,11 @@ def get_project(slug: str) -> dict:
 def update_project(slug: str, body: ProjectBody) -> dict:
     with store.LOCK:
         return projects.update(slug, body.model_dump())
+
+
+@project_api.get("/{slug}/guide")
+def project_guide(slug: str) -> dict:
+    return guide.guide(projects.project_dir(slug))
 
 
 @project_api.get("/{slug}/borrow")
@@ -217,6 +228,8 @@ app.include_router(studio_api)
 app.include_router(generate_api.router)
 app.include_router(generate_api.tts_router)
 app.include_router(train_api.router)
+app.include_router(mining_api.router)
+app.include_router(setup_api.router)
 
 if UI_DIST.is_dir():
     app.mount("/", StaticFiles(directory=UI_DIST, html=True), name="ui")

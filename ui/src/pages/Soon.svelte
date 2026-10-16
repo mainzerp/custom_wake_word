@@ -1,12 +1,9 @@
 <script lang="ts">
-  let { step }: { step: "mining" | "export" } = $props();
+  import { t } from "../lib/i18n.svelte";
+
+  let { step }: { step: "export" } = $props();
 
   const CONTENT = {
-    mining: {
-      milestone: "Milestone 2",
-      steps: ["Scan audio", "Collect triggers", "Review", "Retrain"],
-      text: "The streaming model runs over hours of German podcasts and parliament speech. Every false trigger lands here for a listen.",
-    },
     export: {
       milestone: "Milestone 1",
       steps: ["Recall vs FA/h", "Operating point", "Validate", "ESPHome YAML"],
@@ -18,11 +15,11 @@
 </script>
 
 <section class="panel soon">
-  <span class="chip warn"><span class="dot"></span>{c.milestone}</span>
-  <p>{c.text}</p>
+  <span class="chip warn"><span class="dot"></span>{t(c.milestone)}</span>
+  <p>{t(c.text)}</p>
   <ol>
     {#each c.steps as s, i (s)}
-      <li style:--i={i}><span class="mono">{String(i + 1).padStart(2, "0")}</span>{s}</li>
+      <li style:--i={i}><span class="mono">{String(i + 1).padStart(2, "0")}</span>{t(s)}</li>
     {/each}
   </ol>
 </section>

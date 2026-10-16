@@ -2,6 +2,7 @@
   import Icon from "../Icon.svelte";
   import Waveform from "../Waveform.svelte";
   import { clipIndex } from "../../lib/session";
+  import { t } from "../../lib/i18n.svelte";
   import type { Clip, Label } from "../../lib/types";
 
   let {
@@ -37,7 +38,7 @@
 </script>
 
 <article bind:this={el} class="clip {clip.label ?? ''}" class:focused class:playing>
-  <button class="wave" onclick={onplay} aria-label="Play clip {clipIndex(clip)}">
+  <button class="wave" onclick={onplay} aria-label={t("Play clip {n}", { n: clipIndex(clip) })}>
     <Waveform {url} height={52} buckets={110} colors={COLORS[clip.label ?? "none"]} progress={playing ? progress : null} />
   </button>
   <div class="meta mono">
@@ -46,13 +47,13 @@
     <span class:loud={clip.peak_db > -3} class:quiet={clip.peak_db < -30}>{clip.peak_db} dB</span>
   </div>
   <div class="actions">
-    <button class="small pos" class:active={clip.label === "positive"} onclick={() => onlabel("positive")} title="Positive (P)">
+    <button class="small pos" class:active={clip.label === "positive"} onclick={() => onlabel("positive")} title={t("Positive (P)")}>
       <Icon name="check" size={14} /> Pos
     </button>
-    <button class="small neg" class:active={clip.label === "negative"} onclick={() => onlabel("negative")} title="Negative (N)">
+    <button class="small neg" class:active={clip.label === "negative"} onclick={() => onlabel("negative")} title={t("Negative (N)")}>
       <Icon name="x" size={14} /> Neg
     </button>
-    <button class="small danger icon" onclick={ondelete} title="Delete (D)" aria-label="Delete clip">
+    <button class="small danger icon" onclick={ondelete} title={t("Delete (D)")} aria-label={t("Delete clip")}>
       <Icon name="trash" size={14} />
     </button>
   </div>

@@ -4,6 +4,7 @@
   import MiniClip from "../MiniClip.svelte";
   import JobStats from "./JobStats.svelte";
   import { generate, jobs } from "../../lib/api";
+  import { locale, plural, t } from "../../lib/i18n.svelte";
   import { href } from "../../lib/router.svelte";
   import { app, toast, toastError } from "../../lib/state.svelte";
   import type { ConfusableParams, GenClip, GenerateStatus, Project } from "../../lib/types";
@@ -56,13 +57,13 @@
   }
 
   async function reset() {
-    if (!confirm(`Delete all ${total.toLocaleString()} sound-alike clips?`)) return;
+    if (!confirm(t("Delete all {n} sound-alike clips?", { n: total }))) return;
     const s = await act(() => generate.resetConfusables());
     if (s) {
       samples = [];
       if (app.project) app.project.summary.confusable = 0;
       onstatus(s);
-      toast("Sound-alike clips deleted.");
+      toast(t("Sound-alike clips deleted."));
     }
   }
 
@@ -76,8 +77,8 @@
     const r = running;
     untrack(() => {
       if (wasRunning && !r && job) {
-        if (job.state === "failed") toastError(job.message ?? "Sound-alike generation failed");
-        else toast(job.state === "done" ? `Done: ${total.toLocaleString()} sound-alike clips.` : "Sound-alike generation stopped.");
+        if (job.state === "failed") toastError(job.message ? t(job.message) : t("Sound-alike generation failed"));
+        else toast(job.state === "done" ? t("Done: {n} sound-alike clips.", { n: total }) : t("Sound-alike generation stopped."));
         if (total) draw();
       }
       wasRunning = r;
@@ -90,27 +91,26 @@
 
   const voice = (v: string) => v.replace(/^(bank|design):/, "");
   const label = $derived(
-    total >= params.count ? "Target reached" : total ? `Continue to ${params.count.toLocaleString()}` : `Generate ${params.count.toLocaleString()} clips`,
+    total >= params.count ? t("Target reached") : total ? t("Continue to {n}", { n: params.count }) : t("Generate {n} clips", { n: params.count }),
   );
 </script>
 
 <section class="panel conf">
   <div class="head">
     <div>
-      <span class="eyebrow">Sound-alike negatives</span>
+      <span class="eyebrow">{t("Sound-alike negatives")}</span>
       <p class="dim sub">
-        The sound-alikes from step 1 spoken by the same voices. Every clip is checked: if it came out like the wake word (or
-        contains it), it is dropped, so these never contradict the positives.
+        {t("The sound-alikes from step 1 spoken by the same voices. Every clip is checked: if it came out like the wake word (or contains it), it is dropped, so these never contradict the positives.")}
       </p>
     </div>
     {#if job}
-      <span class="chip {job.state === 'failed' ? 'neg' : running ? 'pos' : ''}"><span class="dot" class:blink={running}></span>{job.state}</span>
+      <span class="chip {job.state === 'failed' ? 'neg' : running ? 'pos' : ''}"><span class="dot" class:blink={running}></span>{t(job.state)}</span>
     {/if}
   </div>
 
   {#if !words.length}
     <p class="dim">
-      No sound-alikes defined yet. <a href={href.project(project.slug, "wakeword")}>Add them in step 1</a> (Suggest finds some for you).
+      {t("No sound-alikes defined yet.")} <a href={href.project(project.slug, "wakeword")}>{t("Add them in step 1")}</a> {t("(Suggest finds some for you).")}
     </p>
   {:else}
     <div class="cols">
@@ -119,18 +119,18 @@
           {#each words as w (w)}<span class="chip neg">{w}</span>{/each}
         </div>
         <p class="faint small">
-          {words.length} words ·
-          <a href={href.project(project.slug, "wakeword")}>edit in step 1</a>
+          {plural(words.length, "{n} word", "{n} words")} ·
+          <a href={href.project(project.slug, "wakeword")}>{t("edit in step 1")}</a>
         </p>
         <div class="presets">
           {#each PRESETS as p (p)}
             <button class="small" class:sel={params.count === p} onclick={() => (params.count = p)} disabled={running}>{p / 1000}k</button>
           {/each}
-          <input type="number" class="mono" min="100" step="1000" bind:value={params.count} disabled={running} aria-label="Target sound-alike clips" />
+          <input type="number" class="mono" min="100" step="1000" bind:value={params.count} disabled={running} aria-label={t("Target sound-alike clips")} />
         </div>
         <div class="actions">
           {#if running}
-            <button class="danger" onclick={stop} disabled={busy}><Icon name="stop" size={15} /> Stop</button>
+            <button class="danger" onclick={stop} disabled={busy}><Icon name="stop" size={15} /> {t("Stop")}</button>
           {:else}
             <button class="primary" onclick={start} disabled={busy || !!blocker || total >= params.count}>
               <Icon name="sparkles" size={16} /> {label}
@@ -138,36 +138,36 @@
           {/if}
         </div>
         {#if blocker}
-          <p class="hint warn">The GPU is busy: {blocker.kind} job of "{blocker.project}" is running.</p>
+          <p class="hint warn">{t("The GPU is busy: {kind} job of \"{project}\" is running.", { kind: blocker.kind, project: blocker.project })}</p>
         {/if}
         {#if newWords}
-          <p class="hint warn">Sound-alikes were added since the last run; they are used for newly generated clips only.</p>
+          <p class="hint warn">{t("Sound-alikes were added since the last run; they are used for newly generated clips only.")}</p>
         {/if}
       </div>
 
       <div class="col">
         <div class="big">
-          <div><strong class="mono">{shown.toLocaleString()}</strong><span class="dim">clips</span></div>
-          <div><strong class="mono">{(status.confusables.seconds / 3600).toFixed(1)}</strong><span class="dim">hours of audio</span></div>
+          <div><strong class="mono">{shown.toLocaleString(locale())}</strong><span class="dim">{t("clips")}</span></div>
+          <div><strong class="mono">{(status.confusables.seconds / 3600).toFixed(1)}</strong><span class="dim">{t("hours of audio")}</span></div>
         </div>
         {#if job}
-          <div class="bar" aria-label="Progress {pct.toFixed(0)}%">
+          <div class="bar" aria-label={t("Progress {pct}%", { pct: pct.toFixed(0) })}>
             <span class="prev" style:width="{startPct}%"></span>
             <span class="fill" class:live={running} style:left="{startPct}%" style:width="{Math.max(0, pct - startPct)}%"></span>
           </div>
-          <JobStats {job} {running} dropTitle="Dropped by length, or because they sounded like the wake word" />
+          <JobStats {job} {running} dropTitle={t("Dropped by length, or because they sounded like the wake word")} />
           {#if job.state === "failed" && job.message}
-            <p class="hint err">{job.message}</p>
+            <p class="hint err">{t(job.message)}</p>
           {/if}
           <button class="ghost toggle" onclick={() => (showLog = !showLog)}>
-            Log <span class="chev" class:open={showLog}><Icon name="chevron" size={14} /></span>
+            {t("Log")} <span class="chev" class:open={showLog}><Icon name="chevron" size={14} /></span>
           </button>
           {#if showLog}
-            <pre class="log mono">{job.log || "(empty)"}</pre>
+            <pre class="log mono">{job.log || t("(empty)")}</pre>
           {/if}
         {/if}
         {#if total && !running}
-          <button class="danger small reset" onclick={reset} disabled={busy}><Icon name="trash" size={14} /> Delete sound-alike clips</button>
+          <button class="danger small reset" onclick={reset} disabled={busy}><Icon name="trash" size={14} /> {t("Delete sound-alike clips")}</button>
         {/if}
       </div>
     </div>
@@ -175,8 +175,8 @@
     {#if total}
       <div class="listen">
         <div class="listen-head">
-          <span class="label">Listen <span class="faint">(Δ = distance to the wake word, all clips are &gt; 0.30)</span></span>
-          <button class="small" onclick={draw} disabled={busy}><Icon name="replay" size={14} /> Draw 12</button>
+          <span class="label">{t("Listen")} <span class="faint">{t("(Δ = distance to the wake word, all clips are > 0.30)")}</span></span>
+          <button class="small" onclick={draw} disabled={busy}><Icon name="replay" size={14} /> {t("Draw 12")}</button>
         </div>
         <div class="grid">
           {#each samples as c (c.url)}

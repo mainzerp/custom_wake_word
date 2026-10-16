@@ -106,6 +106,7 @@ def own_counts(path: Path) -> dict:
         "confusable": corpus.load_index(corpus.confusable_dir(path))["total"],
         "runs": sum(1 for _ in (path / "runs").glob("*/*.tflite")) if (path / "runs").is_dir() else 0,
         "models": count_files(path / "models", "*.tflite"),
+        "mined": count_files(path / "mining" / "negatives"),
     }
 
 

@@ -7,11 +7,18 @@ import type {
   GenClip,
   GenerateParams,
   GenerateStatus,
+  Guide,
   Job,
   Label,
+  MiningHit,
+  MiningLabel,
+  MiningRun,
+  MiningStatus,
   Project,
   ProjectSettings,
   Session,
+  SetupStatus,
+  SetupUse,
   SoundAlike,
   SplitParams,
   TrainRun,
@@ -37,6 +44,7 @@ export const projects = {
   create: (settings: Partial<ProjectSettings>) => post<Project>("/api/projects", settings),
   update: (slug: string, settings: Partial<ProjectSettings> | { borrow_negatives: BorrowEntry[] }) =>
     send<Project>("PATCH", `/api/projects/${encodeURIComponent(slug)}`, settings),
+  guide: (slug: string) => request<Guide>(`/api/projects/${encodeURIComponent(slug)}/guide`),
   borrowCandidates: (slug: string) => request<{ projects: BorrowCandidate[] }>(`/api/projects/${encodeURIComponent(slug)}/borrow`),
 };
 
@@ -58,6 +66,32 @@ export const train = {
   run: (id: string) => request<TrainRun>(`${projectBase()}/train/runs/${id}`),
   deleteRun: (id: string) => post<{ ok: boolean }>(`${projectBase()}/train/runs/${id}/delete`, {}),
   fileUrl: (id: string, name: string) => `${projectBase()}/train/runs/${id}/files/${encodeURIComponent(name)}`,
+};
+
+export const mining = {
+  status: () => request<MiningStatus>(`${projectBase()}/mining`),
+  start: (run: string, sources: string[], cutoff: number | null, auto: boolean) =>
+    post<Job>(`${projectBase()}/mining/start`, { run, sources, cutoff, auto }),
+  check: (id: string) => post<Job>(`${projectBase()}/mining/runs/${id}/check`, {}),
+  run: (id: string) => request<{ run: MiningRun; hits: MiningHit[] }>(`${projectBase()}/mining/runs/${id}`),
+  label: (id: string, hits: number[], label: MiningLabel | null) =>
+    post<{ run: MiningRun; totals: MiningStatus["totals"] }>(`${projectBase()}/mining/runs/${id}/label`, { hits, label }),
+  deleteRun: (id: string) => post<{ ok: boolean }>(`${projectBase()}/mining/runs/${id}/delete`, {}),
+  clipUrl: (id: string, n: number) => `${projectBase()}/mining/runs/${id}/clips/${n}.wav`,
+};
+
+export const setupApi = {
+  status: (speechShards?: number) => request<SetupStatus>(`/api/setup${speechShards ? `?speech_shards=${speechShards}` : ""}`),
+  quick: () => request<{ ready_for: Record<SetupUse, boolean> }>("/api/setup/quick"),
+  start: (items: string[], speech_shards: number) => post<Job>("/api/setup/start", { items, speech_shards }),
+  stop: () => post<Job>("/api/setup/stop", {}),
+  exportUrl: (slug: string) => `/api/projects/${encodeURIComponent(slug)}/export`,
+  importProject: (file: File, slug?: string) =>
+    request<Project>(`/api/projects/import${slug ? `?slug=${encodeURIComponent(slug)}` : ""}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/zip" },
+      body: file,
+    }),
 };
 
 export const tts = {

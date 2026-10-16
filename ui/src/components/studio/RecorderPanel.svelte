@@ -2,6 +2,7 @@
   import Icon from "../Icon.svelte";
   import Scope from "../Scope.svelte";
   import { studio } from "../../lib/api";
+  import { plural, t } from "../../lib/i18n.svelte";
   import { Recorder, dbToPercent } from "../../lib/audio";
   import { setCounts, toast, toastError } from "../../lib/state.svelte";
   import type { Session, SplitParams } from "../../lib/types";
@@ -9,12 +10,13 @@
   let { params = $bindable(), onuploaded }: { params: SplitParams; onuploaded: (s: Session) => void } = $props();
 
   const PARAM_FIELDS: { key: keyof SplitParams; label: string; step: number; hint: string }[] = [
-    { key: "margin_db", label: "Margin dB", step: 1, hint: "dB above the local noise floor that counts as speech" },
-    { key: "min_len", label: "Min length s", step: 0.05, hint: "shortest clip" },
-    { key: "max_len", label: "Max length s", step: 0.1, hint: "longest clip" },
-    { key: "merge_gap", label: "Merge gap s", step: 0.05, hint: "join parts separated by less than this" },
-    { key: "pad", label: "Padding s", step: 0.05, hint: "silence kept around each word" },
-    { key: "floor_window", label: "Floor window s", step: 0.5, hint: "window for the noise floor estimate" },
+    // Getters: t() must run at render time, not once when the module loads.
+    { key: "margin_db", get label() { return t("Margin dB"); }, step: 1, get hint() { return t("dB above the local noise floor that counts as speech"); } },
+    { key: "min_len", get label() { return t("Min length s"); }, step: 0.05, get hint() { return t("shortest clip"); } },
+    { key: "max_len", get label() { return t("Max length s"); }, step: 0.1, get hint() { return t("longest clip"); } },
+    { key: "merge_gap", get label() { return t("Merge gap s"); }, step: 0.05, get hint() { return t("join parts separated by less than this"); } },
+    { key: "pad", get label() { return t("Padding s"); }, step: 0.05, get hint() { return t("silence kept around each word"); } },
+    { key: "floor_window", get label() { return t("Floor window s"); }, step: 0.5, get hint() { return t("window for the noise floor estimate"); } },
   ];
   const SEGMENTS = 24;
 
@@ -61,7 +63,11 @@
         const res = await studio.upload(wav, $state.snapshot(params), prefix);
         setCounts(res.counts);
         onuploaded(res.session);
-        toast(`Saved ${res.session.duration}s, split into ${res.session.clips.length} clips.`);
+        toast(
+          plural(res.session.clips.length, "Saved {duration}s, split into {n} clip.", "Saved {duration}s, split into {n} clips.", {
+            duration: res.session.duration,
+          }),
+        );
       }
     } catch (e) {
       toastError(e);
@@ -76,18 +82,18 @@
 
 <div class="panel rec" class:live={!!rec}>
   <div class="head">
-    <span class="eyebrow">Recorder</span>
-    <span class="chip" class:pos={!!rec}><span class="dot" class:blink={!!rec}></span>{rec ? "LIVE" : "IDLE"}</span>
+    <span class="eyebrow">{t("Recorder")}</span>
+    <span class="chip" class:pos={!!rec}><span class="dot" class:blink={!!rec}></span>{rec ? t("LIVE") : t("IDLE")}</span>
   </div>
 
   <div class="core">
-    <button class="big" class:on={!!rec} disabled={busy} onclick={toggle} aria-label={rec ? "Stop recording" : "Start recording"}>
+    <button class="big" class:on={!!rec} disabled={busy} onclick={toggle} aria-label={rec ? t("Stop recording") : t("Start recording")}>
       <span class="ring"></span>
       <Icon name={rec ? "stop" : "mic"} size={30} stroke={2} />
     </button>
     <div class="readout">
       <div class="time mono">{fmt(elapsed)}</div>
-      <div class="db mono dim">{rec ? `${level.toFixed(0)} dBFS` : busy ? "uploading…" : "ready"}</div>
+      <div class="db mono dim">{rec ? `${level.toFixed(0)} dBFS` : busy ? t("uploading…") : t("ready")}</div>
     </div>
   </div>
 
@@ -101,22 +107,22 @@
 
   <div class="fields">
     <label class="field">
-      Speaker / prefix
-      <input bind:value={prefix} maxlength="40" placeholder="e.g. patric" disabled={!!rec} />
+      {t("Speaker / prefix")}
+      <input bind:value={prefix} maxlength="40" placeholder={t("e.g. patric")} disabled={!!rec} />
     </label>
     <label class="field">
-      Microphone
+      {t("Microphone")}
       <select bind:value={deviceId} disabled={!!rec}>
-        <option value="">System default</option>
+        <option value="">{t("System default")}</option>
         {#each devices as d, i (d.deviceId)}
-          <option value={d.deviceId}>{d.label || `Microphone ${i + 1}`}</option>
+          <option value={d.deviceId}>{d.label || t("Microphone {n}", { n: i + 1 })}</option>
         {/each}
       </select>
     </label>
   </div>
 
   <button class="ghost toggle" onclick={() => (showParams = !showParams)}>
-    <Icon name="sliders" size={16} /> Split settings
+    <Icon name="sliders" size={16} /> {t("Split settings")}
     <span class="chev" class:open={showParams}><Icon name="chevron" size={14} /></span>
   </button>
   {#if showParams}

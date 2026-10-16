@@ -13,7 +13,27 @@ Goals:
 - Output: ESPHome-valid manifest (`.json`) + `.tflite`.
 
 Status: early. Web UI with projects, setup wizard, synthetic samples, sound-alikes, Sample Studio and training
-(featurize, train, calibrate, ESPHome manifest + `.tflite` per run) works; mining and the export page are next.
+(featurize, train, calibrate, ESPHome manifest + `.tflite` per run) and mining work; the export page is next.
+The UI switches between English and German (top bar).
+
+## Languages
+
+Wake words are **German only for now** (decision 2026-10-16). The pipeline is built language-aware, but only German
+has the data and calibration behind it:
+
+| Part | Languages | State |
+|---|---|---|
+| TTS (OmniVoice) | 646 | works for any language |
+| Phonetic check (wav2vec2 phones + espeak-ng) | ~100 | works; thresholds calibrated on German only |
+| Whisper (mining check) | 99 | works |
+| Training, noise negatives, calibration | language independent | works |
+| Voice bank for cloning (`trainer/tts/voices.py`) | German (Kartoffelphon) | other languages fall back to designed voices only (less variety, untested) |
+| Speech corpus for mining (`trainer/mining/audio.py`) | German (Kartoffelphon) | other languages: own audio folders only |
+| Sound-alike suggestions (`trainer/tts/confusables.py`) | letter rules for de/en | others: words typed in by hand |
+
+Adding a language properly needs: a voice bank source (e.g. Multilingual LibriSpeech or Common Voice, read by
+`voices.py` like Kartoffelphon), a speech corpus to mine (ideally the same source, added to `trainer/setup.py`), and a
+check of the phonetic thresholds against a few real recordings. English would be the natural next one.
 
 ## Web UI workflow
 
@@ -35,7 +55,8 @@ so spellings are verified before generating (`POST /api/tts/preview`, no project
 3. Own recordings: Sample Studio (optional, recommended)
 4. Training (`trainer/train/`): one background job per run with live phases.
    - Sources (`sources.py`): synthetic positives (weight 2), own positives (3), sound-alikes (6, penalty 1.25),
-     own negatives (8, 1.25), borrowed projects (4), shared VOiCES speech (12), CHiME-6 dinner party (12),
+     own negatives (8, 1.25), mined false triggers (8, 1.25), mined real wake words (3), borrowed projects (4),
+     shared VOiCES speech (12), CHiME-6 dinner party (12),
      no-speech (5), CHiME-6/DiPCo ambient for validation and test. Clips split 80/10/10 by a hash of their name.
    - Features (`featurize.py`): microWakeWord augmentation (RIR, background noise, EQ, ...) in a CPU pool, stored
      as uint16 (lossless, half of float32) and cropped to the 178 frames the model reads. Cached per corpus shard /
@@ -48,10 +69,35 @@ so spellings are verified before generating (`POST /api/tts/preview`, no project
      tier rule; recall per positive source and trigger rate per word-like negative source are reported.
    - Output per run in `projects/<slug>/runs/<id>/`: `<wake_word>.tflite`, `<wake_word>.json` (ESPHome manifest,
      allowed keys only), `run.json` (sources, validation history, calibration curve), `mww/` (checkpoints, logs).
-5. Mining - planned, milestone 2 (optional)
+5. Mining (`trainer/mining/`, optional): a background job streams a run's int8 TFLite model over hours of real
+   audio on the CPU, exactly like the device (microfrontend via pymicro_features, 2 slices per invoke, window average,
+   cooldown; scores match `calibrate.py` to 1e-7), with 12 worker processes and no TF import, ~1800x realtime.
+   - Audio (`audio.py`): Kartoffelphon (German projects; 11,894 utterances, 33.8 h incl. pauses, with transcripts)
+     and any folder `datasets/mining/<name>/` with wav/flac/mp3/ogg. Utterances are scanned as continuous streams of
+     64 with 0.3 s pauses, so frontend and model state run through like on the device; triggers in the first 1.5 s
+     of a stream are ignored. A fresh frontend per utterance tripled the triggers at utterance starts.
+   - Triggers at the run's cutoff (or lower, "near misses") are kept with 4.5 s context, score, transcript and a flag
+     when the transcript contains the wake word. Review in the UI (keys N/P/X): "not it" writes the 2.3 s training cut
+     to `mining/negatives/`, "wake word" to `mining/positives/`; both are training sources of the next run.
+   - Automatic check (`triage.py`, OmniVoice venv, GPU), run by the scan job after the scan (or later per scan):
+     the IPA phone recognizer on each training cut ("contains the wake word" distance) and the transcript, or Whisper
+     large-v3-turbo on the context for sources without one ("closest one/two-word sequence" by espeak-ng phones).
+     Either at <= 0.30 flags the trigger for review; everything else is labeled "not it" automatically when the scan
+     was declared free of the wake word (default; off for own rooms). Triggers at a place another scan already put
+     into training are skipped as duplicates. Neither signal alone could tell a real wake word apart reliably: of the
+     98 own recordings spliced into Kartoffelphon speech the phones caught ~89 %, Whisper less than half (it writes
+     the context words or hallucinates), so the automatic negative also relies on the source.
+   - First scan, thorough run `20261016-132045-thorough` (0.19 false accepts/h on the ambient set): 234 triggers in
+     33.8 h of Kartoffelphon, 6.9 false accepts/h on German speech; the check labeled 228 and flagged 6 (all
+     harmless: "ja wie", "ja würde", English sentences) in 27 s.
 6. Export (ESPHome manifest + `.tflite`) - planned, milestone 1
 
-Opening a project jumps to the next open step.
+The workflow is a loop (generate -> train -> mine -> train again -> mine again), so a guide (`trainer/guide.py`,
+`GET /api/projects/<slug>/guide`) derives the one next thing to do from the files: a running job, missing samples,
+a first model, triggers to check, a model older than its training data (clip counts per source vs. the newest run's
+`run.json`), a model not scanned yet. Every project page shows it as a "Next step" card, the step bar marks steps that
+need attention (e.g. Training "train again"), the footer and the project list follow it, and opening a project jumps
+to it. Each step page starts with a short "how" text (`ui/src/lib/steps.ts`).
 
 ## Layout
 
@@ -78,10 +124,15 @@ Data layout below `data/`:
 | `cache/preview/<key>/` | Pronunciation check clips (last 20 checks) |
 | `projects/<slug>/jobs/<YYYYMMDD-HHMMSS>-<kind>/` | Background job: `job.json` (command, pid), `progress.json` (written by the worker), `log.txt` |
 | `projects/<slug>/runs/<YYYYMMDD-HHMMSS>-<profile>/` | Training run: model, manifest, `run.json`, `training_parameters.yaml`, `mww/` train dir |
+| `projects/<slug>/mining/<YYYYMMDD-HHMMSS>/` | Mining scan: `mine.json` (model, cutoffs, sources, hours, auto), `hits.json`, `clips/<n>.wav` (context), `triage.json` (automatic check), `labels.json` + `auto.json` (review; labels the check set) |
+| `projects/<slug>/mining/negatives/`, `.../positives/` | Reviewed triggers (training cuts, 16 kHz PCM16), training sources `mined-negative` / `mined-positive` |
+| `datasets/mining/<name>/` | Own audio to mine (any wav/flac/mp3/ogg, read in 10 min blocks) |
 | `cache/features/<key>/` | Cached spectrograms per corpus shard or WAV folder (`training/`, `validation/`, `testing/` RaggedMmaps + `done`) |
-| `datasets/` | Shared negative feature sets and augmentation audio copied from the old trainer volume |
+| `datasets/` | Shared negative feature sets (`negative_datasets/`) and augmentation audio (`mit_rirs_16k/`, `audioset_16k/`, `fma_16k/`, `chime_16k/`), prepared by `trainer.setup` |
+| `downloads/setup/` | Partial downloads of the setup (`*.part`, resumed on the next run; archives are deleted after unpacking) |
+| `system/jobs/` | Jobs that belong to no project (the setup) |
 | `voices/<language>/` | Voice bank for cloning: `<id>.wav` (2.5-5 s, 24 kHz, cut at pauses) + `voices.json` (transcript, F0, gender, source). German: 300 voices (150 m / 150 f) from Kartoffelphon |
-| `downloads/kartoffelphon/` | Kartoffelphon Arrow shards (German podcasts + LibriVox, CC-BY 4.0), source of the voice bank |
+| `downloads/kartoffelphon/` | Kartoffelphon Arrow shards `test-NNNNN.arrow` (HF `MultiLlasa/Kartoffelphon-2.5M-de-ger`, test split, German podcasts + LibriVox, CC-BY 4.0): shard 0 is the voice bank source, every shard ~33 h of speech to mine |
 | `models/piper/` | Piper voices from the first spikes (unused by the pipeline) |
 
 `python -m trainer.projects list` shows all projects. `python -m trainer.projects migrate --wake-word X`
@@ -93,6 +144,29 @@ moves a pre-project `data/recordings` + `data/samples` layout into a new project
 cd ui && npm ci --before=YYYY-MM-DD && npm run build && cd ..
 docker compose up -d --build
 ```
+
+### A new machine
+
+`data/` is not in the repository. On a fresh machine open the **Data** page (top bar; the home page and the
+"Next step" card point there while something is missing) and start the download, or run
+`py-train -m trainer.setup run --job /tmp/setup` in the container (`status` lists what is there). `trainer/setup.py`
+downloads everything from pinned sources with SHA-256 checks, resumes interrupted downloads, streams archives member
+by member (extra disk: one archive) and converts audio exactly like the old trainer's `setup_*` scripts (librosa,
+16 kHz mono int16), so the result is the same data:
+
+| Item | Source (pinned) | Download | On disk |
+|---|---|---|---|
+| negatives | HF `kahrendt/microwakeword` @0da95f9: speech, dinner_party, no_speech, dinner_party_eval zips | 5.7 GB | 25 GB |
+| rirs | HF `TaterTotterson/MIT_environmental_impulse_responses` @1b3e09d, `16khz/` | 8 MB | 6 MB |
+| audioset | HF `agkphysics/AudioSet` @6762f04, `data/bal_train00-09.tar` (FLAC) | 26 GB | 5.6 GB |
+| fma | `os.unil.cloud.switch.ch/fma/fma_small.zip` (MP3) | 7.7 GB | 7.2 GB |
+| chime | `archive.org/download/chime-home/chime_home.tar.gz` (48 kHz WAV) | 4.2 GB | 0.8 GB |
+| speech | HF `MultiLlasa/Kartoffelphon-2.5M-de-ger` @5100918, `test/data-0000N-of-00011.arrow` (1-11 shards) | 0.5 GB each | same |
+| models | OmniVoice, wav2vec2 phones, Whisper at the revisions in `trainer/models.py` (OmniVoice venv) | 6.2 GB | same |
+| voices | built from speech shard 0 with `trainer.tts.voices build` (GPU, seed 0, shard 0 only) | - | 60 MB |
+
+Projects move as a .zip: Data page -> Export (or `py-train -m trainer.setup export <slug>`), then Import on the
+other machine (`... setup import <file.zip> [--slug name]`). Everything but `jobs/` moves along.
 
 The container starts the API and UI on http://localhost:8790 (uvicorn with auto-reload on `trainer/`).
 For UI development run `npm run dev` in `ui/` and open http://localhost:5173 (proxies `/api` to 8790).

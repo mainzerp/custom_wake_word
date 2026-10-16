@@ -70,8 +70,11 @@ def _key(*parts) -> str:
     return hashlib.sha1("|".join(str(p) for p in (FEATURE_VERSION, *parts)).encode()).hexdigest()[:20]
 
 
-def shard_items(path: Path) -> list[Item]:
+def shard_items(path: Path, keys: bool = True) -> list[Item]:
+    """keys=False: counts from the index only, no stat per shard (a stat costs ~3 ms on the Windows bind mount)."""
     index = corpus.load_index(path)
+    if not keys:
+        return [Item("shard", str(path / s["name"]), "", s["count"]) for s in index["shards"]]
     out = []
     for s in index["shards"]:
         f = path / s["name"]
@@ -81,11 +84,13 @@ def shard_items(path: Path) -> list[Item]:
     return out
 
 
-def wav_item(path: Path) -> list[Item]:
+def wav_item(path: Path, keys: bool = True) -> list[Item]:
     files = sorted(path.glob("*.wav")) if path.is_dir() else []
     if not files:
         return []
-    sig = [(f.name, f.stat().st_size, f.stat().st_mtime_ns) for f in files]
+    if not keys:
+        return [Item("wavs", str(path), "", len(files))]
+    sig = [(f.name, st.st_size, st.st_mtime_ns) for f in files for st in (f.stat(),)]
     return [Item("wavs", str(path), _key("wavs", path.resolve(), sig), len(files))]
 
 
@@ -115,21 +120,28 @@ def shared_sources() -> list[Source]:
     return out
 
 
-def project_sources(path: Path) -> list[Source]:
+def project_sources(path: Path, keys: bool = True) -> list[Source]:
+    """keys=False only counts clips (no cache keys, no stat per file): enough for overviews like the guide."""
     data = projects.load(path)
+    shards = lambda d: shard_items(d, keys)  # noqa: E731
+    wavs = lambda d: wav_item(d, keys)  # noqa: E731
     out = [
-        Source("synthetic", "Synthetic positives", True, 2.0, items=shard_items(corpus.corpus_dir(path))),
-        Source("own-positive", "Own recordings: wake word", True, 3.0, items=wav_item(path / "samples" / "positive")),
-        Source("sound-alikes", "Sound-alike negatives", False, 6.0, 1.25, items=shard_items(corpus.confusable_dir(path))),
+        Source("synthetic", "Synthetic positives", True, 2.0, items=shards(corpus.corpus_dir(path))),
+        Source("own-positive", "Own recordings: wake word", True, 3.0, items=wavs(path / "samples" / "positive")),
+        Source("sound-alikes", "Sound-alike negatives", False, 6.0, 1.25, items=shards(corpus.confusable_dir(path))),
         Source("own-negative", "Own recordings: not the wake word", False, 8.0, 1.25,
-               items=wav_item(path / "samples" / "negative")),
+               items=wavs(path / "samples" / "negative")),
+        Source("mined-negative", "Mined false triggers", False, 8.0, 1.25, items=wavs(path / "mining" / "negatives"),
+               note="reviewed in the mining step"),
+        Source("mined-positive", "Mined: wake word in real speech", True, 3.0, items=wavs(path / "mining" / "positives"),
+               note="reviewed in the mining step"),
     ]
     for b in projects.borrowed_sources(data):
         other = PROJECTS / b["slug"]
         if b["kind"] == "recordings":
-            items = [i for d in b["dirs"] for i in wav_item(Path(d))]
+            items = [i for d in b["dirs"] for i in wavs(Path(d))]
         else:
-            items = shard_items(corpus.corpus_dir(other))
+            items = shards(corpus.corpus_dir(other))
         out.append(Source(f"borrowed:{b['slug']}:{b['kind']}", f"Borrowed from {b['slug']} ({b['kind']})", False,
                           4.0, items=items))
     for s in out:
@@ -143,7 +155,9 @@ def check(sources: list[Source]) -> list[str]:
     if not any(s.truth and s.clips for s in sources):
         problems.append("no positives: generate synthetic samples or record some first")
     if not any(s.id == "shared:dinner_party_eval" for s in sources):
-        problems.append("the ambient evaluation set (datasets/negative_datasets/dinner_party_eval) is missing")
+        problems.append("the ambient evaluation set (datasets/negative_datasets/dinner_party_eval) is missing: "
+                        "download the shared data on the Data page (top bar)")
     if not any(s.id.startswith("shared:") and s.sampling_weight > 0 for s in sources):
-        problems.append("no shared negative datasets found below datasets/negative_datasets")
+        problems.append("no shared negative datasets found below datasets/negative_datasets: "
+                        "download the shared data on the Data page (top bar)")
     return problems

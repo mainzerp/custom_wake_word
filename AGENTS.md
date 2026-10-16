@@ -24,15 +24,21 @@
 - Docker Desktop's disk lives on F: (`F:\DockerVolumes\DockerDesktopWSL`, set via `CustomWslDistroDir`
   in `%APPDATA%\Docker\settings-store.json`). The GUI move fails (robocopy exit 1 treated as error).
 - Old trainer volume is `wake-word_mww-data` (not `mww-data`); mount it read-only only.
+- Shared data comes from `trainer/setup.py` (pinned URLs, revisions, SHA-256, same conversion as the old trainer);
+  model weights are pinned in `trainer/models.py` and loaded via `models.local(...)`. New external data or models
+  must be added there, never fetched ad hoc, so a fresh machine can reproduce `data/` from the Data page.
 - Dependency policy: exact pins, released >= 7 days ago. Regenerate lock files with
   `uv pip compile ... --exclude-newer <today-7d>` (see README). npm: `npm install --before=<today-7d>`.
 - UI: `ui/` (Svelte 5 runes, TypeScript). Verify with `npm run check` and `npm run build` in `ui/`.
   The container serves `ui/dist` plus `/api` on port 8790; `npm run dev` serves on 5173 with a proxy.
-  UI strings are English. Look: "Dark Neon / Synth" (tokens in `ui/src/app.css`).
+  UI strings are written in English and wrapped in `t("...")` (`ui/src/lib/i18n.svelte.ts`, toggle EN/DE in the top bar);
+  German goes into `ui/src/lib/i18n/de/<area>.ts`, `npm run i18n` lists missing keys. Server texts the UI shows are
+  static English (or templates + params like `trainer/guide.py`) so the UI can translate them. Look: "Dark Neon / Synth" (tokens in `ui/src/app.css`).
 - UI structure is project-first: start page = wake word list, "New wake word" = wizard, project page =
   step bar (`ui/src/lib/steps.ts`: wakeword, generate, record, train, mining, export). New features
   go into their step page under `ui/src/pages/steps/`; set `available: true` in `steps.ts` when a step
-  works. Hash routes: `#/`, `#/new`, `#/p/<slug>/<step>`. All per-wake-word data lives in
+  works. The UI must explain itself: keep the step's `how` text in `steps.ts` current and teach `trainer/guide.py`
+  the new state (it drives the "Next step" card, step bar attention, footer and project list). Hash routes: `#/`, `#/new`, `#/p/<slug>/<step>`. All per-wake-word data lives in
   `data/projects/<slug>/`; APIs are `/api/projects/...` and `/api/projects/<slug>/studio/...`.
 - After a UI build the container picks up `ui/dist` immediately (no restart); uvicorn reloads on `trainer/` changes.
 - The server runs in the TF venv and must not import torch/OmniVoice/Piper. GPU stages run as detached
@@ -45,6 +51,12 @@
   (also the old trainer's `F:\Github\wake-word\models\dscharwis.tflite`). Training runs at ~35 steps/s on the 3090,
   ~12 steps/s including validation. Changing augmentation or storage needs a bump of `FEATURE_VERSION` in
   `trainer/train/sources.py`; changing the model flags in `run.py` must keep `spectrogram_length() <= CROP`.
+- Mining (`trainer/mining/`): `py-train -m trainer.mining.run --project ... --run <train run id> --sources kartoffelphon --job /tmp/j`
+  scans 33.8 h in ~1 min on the CPU (TFLite like the device, no TF import, so no GPU needed). Utterances are streamed
+  back to back; never restart the microfrontend per clip (its noise estimate makes clip starts trigger).
+  The scan job then runs `py-omni -m trainer.mining.triage` as a child (strip LD_LIBRARY_PATH between venvs). The
+  check only auto-labels negatives because the source is declared wake-word free: phones and Whisper alone miss
+  real wake words (measured), so never let them label without that guarantee. A person's label always wins.
 - Modules run with `python script.py` inside the container need `-e PYTHONPATH=/app`; `-m trainer...` works as is.
 - Quick backend run on the host without Docker (Studio only, no GPU):
   `uv run --no-project --python 3.12 --with fastapi==0.142.4 --with uvicorn==0.54.0 --with soundfile==0.14.0 --with scipy==1.18.1 --with numpy==2.5.3 python -m uvicorn trainer.server.app:app --port 8790`

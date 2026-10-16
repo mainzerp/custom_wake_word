@@ -3,6 +3,8 @@
   import Icon from "../../components/Icon.svelte";
   import { jobs, train } from "../../lib/api";
   import { duration } from "../../lib/format";
+  import { guide, refreshGuide } from "../../lib/guide.svelte";
+  import { i18n, locale, t } from "../../lib/i18n.svelte";
   import { href } from "../../lib/router.svelte";
   import { app, toast, toastError } from "../../lib/state.svelte";
   import type { Project, TrainRun, TrainStatus, ValPoint } from "../../lib/types";
@@ -23,6 +25,17 @@
   const positives = $derived(status?.sources.filter((s) => s.truth) ?? []);
   const negatives = $derived(status?.sources.filter((s) => !s.truth) ?? []);
   const history = $derived<ValPoint[]>(job?.history ?? []);
+  // Training data that changed since the newest model (trainer/guide.py)
+  const changes = $derived(guide.slug === project.slug ? guide.data?.changes ?? [] : []);
+  const changed = (id: string) => changes.find((c) => c.id === id);
+  const hasModel = $derived(!!status?.runs.some((r) => r.state === "done" && r.calibration));
+  // Source labels come from trainer/train/sources.py; borrowed ones carry the other project's slug
+  function sourceLabel(s: { id: string; label: string }) {
+    const m = s.id.match(/^borrowed:(.+):(recordings|synthetic)$/);
+    return m ? t("Borrowed from {slug} ({kind})", { slug: m[1], kind: t(m[2]) }) : t(s.label);
+  }
+  // English labels read as nouns inside a sentence; German nouns keep their capital letter
+  const inline = (s: { id: string; label: string }) => (i18n.lang === "de" ? sourceLabel(s) : sourceLabel(s).toLowerCase());
 
   const PHASES = [
     { id: "featurize", label: "Features" },
@@ -38,11 +51,12 @@
       const s = await train.status();
       status = s;
       if (wasRunning && s.job && !s.job.alive) {
-        if (s.job.state === "failed") toastError(s.job.message ?? "Training failed");
-        else toast(s.job.state === "done" ? "Training done, the model is ready." : "Training stopped.");
+        if (s.job.state === "failed") toastError(s.job.message ?? t("Training failed"));
+        else toast(s.job.state === "done" ? t("Training done, the model is ready.") : t("Training stopped."));
         const done = s.runs.find((r) => r.id === s.job?.run);
         if (done?.state === "done") toggle(done.id, true);
         if (app.project?.slug === project.slug) app.project.summary.runs = s.runs.filter((r) => r.files).length;
+        refreshGuide(project.slug);
       }
     } catch (e) {
       toastError(e);
@@ -74,7 +88,7 @@
   }
 
   async function stop() {
-    if (job && confirm("Stop the training? The run is discarded, cached features are kept.")) {
+    if (job && confirm(t("Stop the training? The run is discarded, cached features are kept."))) {
       await act(() => jobs.stop(job.id));
       await refresh();
     }
@@ -92,7 +106,7 @@
   }
 
   async function remove(r: TrainRun) {
-    if (!confirm(`Delete run ${r.id} and its model files?`)) return;
+    if (!confirm(t("Delete run {id} and its model files?", { id: r.id }))) return;
     if (await act(() => train.deleteRun(r.id))) {
       if (open === r.id) open = null;
       await refresh();
@@ -100,7 +114,7 @@
   }
 
   const pct = (x?: number) => (x == null ? "–" : `${(x * 100).toFixed(1)}%`);
-  const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+  const when = (iso: string) => new Date(iso).toLocaleString(locale(), { dateStyle: "short", timeStyle: "short" });
   const dur = (s?: number) => (s == null ? "" : duration(s));
 
   // Sparkline paths for the validation history (x: step, y: 0..1 or 0..maxFaph)
@@ -121,111 +135,132 @@
 <div class="page">
   <div class="top">
     <section class="panel run">
-      <span class="eyebrow">New run</span>
+      <span class="eyebrow">{t("New run")}</span>
       <div class="profiles">
         {#each Object.entries(status.profiles) as [id, p] (id)}
           <button class="profile" class:sel={profile === id} onclick={() => (profile = id)} disabled={running}>
-            <strong>{p.label}</strong>
-            <span class="mono">{(p.steps / 1000).toFixed(0)}k steps</span>
-            <span class="faint">{p.hint}</span>
+            <strong>{t(p.label)}</strong>
+            <span class="mono">{t("{n}k steps", { n: (p.steps / 1000).toFixed(0) })}</span>
+            <span class="faint">{t(p.hint)}</span>
           </button>
         {/each}
       </div>
       <label class="field">
-        <span>Target false accepts per hour <span class="faint">(picks cutoff + window after training)</span></span>
+        <span>{t("Target false accepts per hour")} <span class="faint">{t("(picks cutoff + window after training)")}</span></span>
         <input type="number" class="mono" min="0.05" max="5" step="0.05" bind:value={targetFaph} disabled={running} />
       </label>
+      {#if hasModel && !running}
+        {#if changes.length}
+          <div class="callout warn">
+            <strong>{t("New data since the last model")}</strong>
+            <ul>
+              {#each changes as c (c.id)}
+                <li><span class="mono">{c.now - c.before > 0 ? "+" : ""}{(c.now - c.before).toLocaleString(locale())}</span> {inline(c)}</li>
+              {/each}
+            </ul>
+            <span>{t("Clips only take effect in a new run. Train again, then scan the new model in the mining step.")}</span>
+          </div>
+        {:else}
+          <p class="hint faint">{t("The newest model already contains all current training data.")}</p>
+        {/if}
+      {/if}
       <div class="actions">
         {#if running}
-          <button class="danger" onclick={stop} disabled={busy}><Icon name="stop" size={15} /> Stop</button>
+          <button class="danger" onclick={stop} disabled={busy}><Icon name="stop" size={15} /> {t("Stop")}</button>
         {:else}
           <button class="primary" onclick={start} disabled={busy || !!blocker || status.problems.length > 0}>
-            <Icon name="pulse" size={16} /> Train {status.profiles[profile]?.label.toLowerCase()} model
+            <Icon name="pulse" size={16} /> {t("Train {profile} model", { profile: t(status.profiles[profile]?.label ?? "").toLowerCase() })}
           </button>
         {/if}
       </div>
       {#each status.problems as p (p)}
-        <p class="hint err">{p}</p>
+        <p class="hint err">{t(p)}</p>
       {/each}
       {#if blocker}
-        <p class="hint warn">The GPU is busy: {blocker.kind} job of "{blocker.project}" is running.</p>
+        <p class="hint warn">{t("The GPU is busy: {kind} job of \"{project}\" is running.", { kind: blocker.kind, project: blocker.project })}</p>
       {/if}
     </section>
 
     <section class="panel progress">
       <div class="head">
-        <span class="eyebrow">Progress</span>
+        <span class="eyebrow">{t("Progress")}</span>
         {#if job}
-          <span class="chip {job.state === 'failed' ? 'neg' : running ? 'pos' : ''}"><span class="dot" class:blink={running}></span>{job.state}</span>
+          <span class="chip {job.state === 'failed' ? 'neg' : running ? 'pos' : ''}"><span class="dot" class:blink={running}></span>{t(job.state)}</span>
         {/if}
       </div>
       {#if job}
         <ol class="phases">
           {#each PHASES as p, i (p.id)}
-            <li class:done={i < phaseIndex} class:now={i === phaseIndex && running}>{p.label}</li>
+            <li class:done={i < phaseIndex} class:now={i === phaseIndex && running}>{t(p.label)}</li>
           {/each}
         </ol>
         {#if job.phase === "featurize" && job.featurize}
           {@const f = job.featurize}
           <div class="bar"><span class="fill live" style:width="{f.total ? (f.done / f.total) * 100 : 100}%"></span></div>
           <div class="stats mono">
-            <span>{f.done.toLocaleString()} / {f.total.toLocaleString()} clips</span>
-            <span>{f.rate} clips/s</span>
-            <span>ETA {duration(f.eta)}</span>
+            <span>{t("{done} / {total} clips", { done: f.done, total: f.total })}</span>
+            <span>{t("{n} clips/s", { n: f.rate })}</span>
+            <span>{t("ETA {time}", { time: duration(f.eta) })}</span>
           </div>
         {:else if job.steps}
           <div class="bar"><span class="fill" class:live={running} style:width="{Math.min(100, ((job.step ?? 0) / job.steps) * 100)}%"></span></div>
           <div class="stats mono">
-            <span>step {(job.step ?? 0).toLocaleString()} / {job.steps.toLocaleString()}</span>
-            {#if job.phase === "train"}<span>{job.rate ?? 0} steps/s</span><span>ETA {running ? duration(job.eta) : "–"}</span>{/if}
+            <span>{t("step {step} / {steps}", { step: job.step ?? 0, steps: job.steps })}</span>
+            {#if job.phase === "train"}<span>{t("{n} steps/s", { n: job.rate ?? 0 })}</span><span>{t("ETA {time}", { time: running ? duration(job.eta) : "–" })}</span>{/if}
           </div>
         {/if}
-        {#if job.message}<p class="dim small">{job.message}</p>{/if}
+        {#if job.message}<p class="dim small">{t(job.message)}</p>{/if}
         {#if history.length > 1}
           <div class="charts">
             <figure>
-              <figcaption>Validation recall <span class="mono">{pct(history.at(-1)?.recall)}</span></figcaption>
+              <figcaption>{t("Validation recall")} <span class="mono">{pct(history.at(-1)?.recall)}</span></figcaption>
               <svg viewBox="0 0 300 70" preserveAspectRatio="none"><path d={path(history, (p) => p.recall, 1)} class="l-cyan" /></svg>
             </figure>
             <figure>
-              <figcaption>False accepts/h (raw, no window) <span class="mono">{history.at(-1)?.faph.toFixed(2)}</span></figcaption>
+              <figcaption>{t("False accepts/h (raw, no window)")} <span class="mono">{history.at(-1)?.faph.toFixed(2)}</span></figcaption>
               <svg viewBox="0 0 300 70" preserveAspectRatio="none"><path d={path(history, (p) => p.faph, maxFaph)} class="l-magenta" /></svg>
             </figure>
           </div>
         {/if}
         {#if job.state === "failed" && job.message}<p class="hint err">{job.message}</p>{/if}
         <button class="ghost toggle" onclick={() => (showLog = !showLog)}>
-          Log <span class="chev" class:open={showLog}><Icon name="chevron" size={14} /></span>
+          {t("Log")} <span class="chev" class:open={showLog}><Icon name="chevron" size={14} /></span>
         </button>
-        {#if showLog}<pre class="log mono">{job.log || "(empty)"}</pre>{/if}
+        {#if showLog}<pre class="log mono">{job.log || t("(empty)")}</pre>{/if}
       {:else}
-        <p class="dim">No run yet. A fast run takes about half an hour on the RTX 3090, features are cached for the next one.</p>
+        <p class="dim">{t("No run yet. A fast run takes about half an hour on the RTX 3090, features are cached for the next one.")}</p>
       {/if}
     </section>
   </div>
 
   <section class="panel data">
     <div class="head">
-      <span class="eyebrow">Training data</span>
-      <span class="faint small">sampling weight = share of each training batch · penalty = loss weight of a mistake</span>
+      <span class="eyebrow">{t("Training data")}</span>
+      <span class="faint small">{t("sampling weight = share of each training batch · penalty = loss weight of a mistake")}</span>
     </div>
     <div class="cols">
       {#each [{ title: "Wake word", list: positives, cls: "pos" }, { title: "Not the wake word", list: negatives, cls: "neg" }] as g (g.title)}
         <div>
-          <h3 class={g.cls}>{g.title}</h3>
+          <h3 class={g.cls}>{t(g.title)}</h3>
           <table>
-            <thead><tr><th>Source</th><th class="num">Clips</th><th class="num">Weight</th><th class="num">Penalty</th><th>Features</th></tr></thead>
+            <thead><tr><th>{t("Source")}</th><th class="num">{t("Clips")}</th><th class="num">{t("Weight")}</th><th class="num">{t("Penalty")}</th><th>{t("Features")}</th></tr></thead>
             <tbody>
               {#each g.list as s (s.id)}
                 <tr>
-                  <td>{s.label}{#if s.note}<span class="faint"> · {s.note}</span>{/if}</td>
-                  <td class="num mono">{s.clips.toLocaleString()}</td>
+                  <td>{sourceLabel(s)}{#if s.note}<span class="faint"> · {t(s.note)}</span>{/if}</td>
+                  <td class="num mono">
+                    {s.clips.toLocaleString(locale())}
+                    {#if hasModel && changed(s.id)}
+                      {@const c = changed(s.id)!}
+                      <span class="new" title={t("Not in the newest model yet (it had {n})", { n: c.before })}>{t("{n} new", { n: `${c.now - c.before > 0 ? "+" : ""}${(c.now - c.before).toLocaleString(locale())}` })}</span>
+                    {/if}
+                  </td>
                   <td class="num mono">{s.sampling_weight}</td>
                   <td class="num mono">{s.penalty_weight}</td>
-                  <td class="mono faint">{s.prebuilt ? "prebuilt" : `${s.cached}/${s.parts} cached`}</td>
+                  <td class="mono faint">{s.prebuilt ? t("prebuilt") : t("{cached}/{parts} cached", { cached: s.cached, parts: s.parts })}</td>
                 </tr>
               {:else}
-                <tr><td colspan="5" class="faint">none</td></tr>
+                <tr><td colspan="5" class="faint">{t("none")}</td></tr>
               {/each}
             </tbody>
           </table>
@@ -233,15 +268,15 @@
       {/each}
     </div>
     <p class="faint small">
-      More data: <a href={href.project(project.slug, "generate")}>synthetic samples and sound-alikes</a> ·
-      <a href={href.project(project.slug, "record")}>own recordings and borrowed negatives</a>
+      {t("More data:")} <a href={href.project(project.slug, "generate")}>{t("synthetic samples and sound-alikes")}</a> ·
+      <a href={href.project(project.slug, "record")}>{t("own recordings and borrowed negatives")}</a>
     </p>
   </section>
 
   <section class="panel runs">
-    <span class="eyebrow">Runs</span>
+    <span class="eyebrow">{t("Runs")}</span>
     {#if !status.runs.length}
-      <p class="dim">Trained models appear here with their measured recall and false accepts per hour.</p>
+      <p class="dim">{t("Trained models appear here with their measured recall and false accepts per hour.")}</p>
     {/if}
     {#each status.runs as r (r.id)}
       {@const c = r.calibration}
@@ -250,11 +285,11 @@
           <span class="chev" class:open={open === r.id}><Icon name="chevron" size={14} /></span>
           <span class="when">{when(r.started)}</span>
           <span class="chip">{r.profile} · {(r.steps / 1000).toFixed(0)}k</span>
-          <span class="chip {r.state === 'done' ? 'pos' : r.state === 'failed' ? 'neg' : ''}">{r.state}</span>
+          <span class="chip {r.state === 'done' ? 'pos' : r.state === 'failed' ? 'neg' : ''}">{t(r.state)}</span>
           {#if c}
-            <span class="metric"><span class="faint">recall</span> <strong class="mono">{pct(c.recall)}</strong></span>
+            <span class="metric"><span class="faint">{t("recall")}</span> <strong class="mono">{pct(c.recall)}</strong></span>
             <span class="metric"><span class="faint">FA/h</span> <strong class="mono" class:warn={!c.met_target}>{c.false_accepts_per_hour.toFixed(2)}</strong></span>
-            <span class="metric"><span class="faint">cutoff</span> <span class="mono">{c.probability_cutoff} · w{c.sliding_window_size}</span></span>
+            <span class="metric"><span class="faint">{t("cutoff")}</span> <span class="mono">{c.probability_cutoff} · w{c.sliding_window_size}</span></span>
           {/if}
           <span class="spacer"></span>
           {#if r.seconds}<span class="faint mono small">{dur(r.seconds)}</span>{/if}
@@ -266,7 +301,7 @@
               {@const dc = detail.calibration}
               <div class="detail-cols">
                 <div>
-                  <span class="label">Recall vs. false accepts per hour (window {dc.sliding_window_size}, {dc.ambient_hours} h ambient)</span>
+                  <span class="label">{t("Recall vs. false accepts per hour (window {window}, {hours} h ambient)", { window: dc.sliding_window_size, hours: dc.ambient_hours })}</span>
                   <svg class="curve" viewBox="-30 -10 400 195">
                     <line x1="0" y1="160" x2="360" y2="160" class="axis" />
                     <line x1="0" y1="0" x2="0" y2="160" class="axis" />
@@ -278,30 +313,30 @@
                   </svg>
                 </div>
                 <div>
-                  <span class="label">Held-out test clips at the chosen operating point</span>
+                  <span class="label">{t("Held-out test clips at the chosen operating point")}</span>
                   <table>
                     <tbody>
                       {#each dc.sources as s (s.id)}
                         <tr>
-                          <td>{s.label}</td>
+                          <td>{sourceLabel(s)}</td>
                           <td class="num mono faint">{s.clips}</td>
                           <td class="num mono {s.truth ? 'pos' : 'neg'}">
-                            {s.truth ? `${pct(s.recall)} detected` : `${pct(s.trigger_rate)} trigger`}
+                            {s.truth ? t("{pct} detected", { pct: pct(s.recall) }) : t("{pct} trigger", { pct: pct(s.trigger_rate) })}
                           </td>
                         </tr>
                       {/each}
                       <tr>
-                        <td>Ambient audio (dinner party, DiPCo)</td>
+                        <td>{t("Ambient audio (dinner party, DiPCo)")}</td>
                         <td class="num mono faint">{dc.ambient_hours} h</td>
                         <td class="num mono neg">{dc.false_accepts_per_hour.toFixed(2)} / h</td>
                       </tr>
                     </tbody>
                   </table>
-                  {#if !dc.met_target}<p class="hint warn">No operating point met {dc.target_false_accepts_per_hour} FA/h; this is the best fallback.</p>{/if}
+                  {#if !dc.met_target}<p class="hint warn">{t("No operating point met {target} FA/h; this is the best fallback.", { target: dc.target_false_accepts_per_hour })}</p>{/if}
                 </div>
               </div>
             {:else if !r.error}
-              <p class="dim small">{r.state === "running" ? "Still training." : "Loading…"}</p>
+              <p class="dim small">{r.state === "running" ? t("Still training.") : t("Loading…")}</p>
             {/if}
             <div class="files">
               {#if r.files}
@@ -311,7 +346,7 @@
               {/if}
               <span class="spacer"></span>
               {#if r.state !== "running"}
-                <button class="danger small" onclick={() => remove(r)} disabled={busy}><Icon name="trash" size={14} /> Delete run</button>
+                <button class="danger small" onclick={() => remove(r)} disabled={busy}><Icon name="trash" size={14} /> {t("Delete run")}</button>
               {/if}
             </div>
           </div>
@@ -549,6 +584,35 @@
   td {
     padding: 6px;
     border-bottom: 1px solid rgba(150, 130, 255, 0.07);
+  }
+  .callout {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .callout.warn {
+    border: 1px solid rgba(255, 190, 70, 0.45);
+    background: rgba(255, 190, 70, 0.07);
+  }
+  .callout strong {
+    color: var(--amber);
+    font-weight: 600;
+  }
+  .callout ul {
+    margin: 0;
+    padding-left: 18px;
+  }
+  .callout span {
+    color: var(--text-dim);
+  }
+  .new {
+    display: block;
+    font-size: 11px;
+    color: var(--amber);
   }
   .num {
     text-align: right;

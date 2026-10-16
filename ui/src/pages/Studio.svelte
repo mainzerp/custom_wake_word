@@ -3,6 +3,7 @@
   import SessionList from "../components/studio/SessionList.svelte";
   import SessionView from "../components/studio/SessionView.svelte";
   import { studio } from "../lib/api";
+  import { t } from "../lib/i18n.svelte";
   import { setCounts, toastError } from "../lib/state.svelte";
   import { DEFAULT_PARAMS, type Session, type SplitParams } from "../lib/types";
 
@@ -54,8 +55,8 @@
       {/key}
     {:else if loaded}
       <div class="panel empty">
-        <h2>No takes yet</h2>
-        <p class="dim">Hit record, say the wake word a few dozen times with short pauses, then stop. Clips appear here, ready to sort.</p>
+        <h2>{t("No takes yet")}</h2>
+        <p class="dim">{t("Hit record, say the wake word a few dozen times with short pauses, then stop. Clips appear here, ready to sort.")}</p>
       </div>
     {/if}
   </section>

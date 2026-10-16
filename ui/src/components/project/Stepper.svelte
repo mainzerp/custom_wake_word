@@ -1,20 +1,26 @@
 <script lang="ts">
   import Icon from "../Icon.svelte";
+  import { guide, noteText } from "../../lib/guide.svelte";
+  import { t } from "../../lib/i18n.svelte";
   import { href } from "../../lib/router.svelte";
   import { STEPS, stepState, type StepId } from "../../lib/steps";
   import type { Project } from "../../lib/types";
 
   let { project, current }: { project: Project; current: StepId } = $props();
+
+  const notes = $derived(guide.slug === project.slug ? guide.data?.steps ?? {} : {});
 </script>
 
-<nav class="stepper" aria-label="Workflow">
+<nav class="stepper" aria-label={t("Workflow")}>
   {#each STEPS as s, i (s.id)}
     {@const st = stepState(s.id, project)}
+    {@const note = notes[s.id]}
     <a
       class="step"
       class:on={s.id === current}
       class:done={st.done}
       class:soon={!s.available}
+      class:attention={note?.attention}
       href={href.project(project.slug, s.id)}
       aria-current={s.id === current ? "step" : undefined}
     >
@@ -22,8 +28,8 @@
         {#if st.done}<Icon name="check" size={15} stroke={2.4} />{:else}<span class="mono">{i + 1}</span>{/if}
       </span>
       <span class="text">
-        <span class="label">{s.label}</span>
-        <span class="metric mono">{s.available ? st.metric : "soon"}</span>
+        <span class="label">{t(s.label)}</span>
+        <span class="metric mono">{s.available ? (note?.attention ? noteText(note) : st.metric) : t("soon")}</span>
       </span>
     </a>
   {/each}
@@ -114,6 +120,26 @@
   .soon .metric {
     color: var(--amber);
     opacity: 0.7;
+  }
+  /* A done step whose result is outdated (e.g. a model older than the data) or that waits for input. */
+  .attention .metric {
+    color: var(--amber);
+  }
+  .attention .badge {
+    border-color: var(--amber);
+    color: var(--amber);
+    background: rgba(255, 190, 70, 0.1);
+  }
+  .attention .badge::after {
+    content: "";
+    position: absolute;
+    top: 6px;
+    left: 34px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--amber);
+    box-shadow: 0 0 8px var(--amber);
   }
   @media (max-width: 1200px) {
     .stepper {

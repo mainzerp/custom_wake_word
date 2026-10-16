@@ -1,3 +1,4 @@
+import { plural, t } from "./i18n.svelte";
 import type { Project } from "./types";
 
 export interface Step {
@@ -5,18 +6,44 @@ export interface Step {
   label: string;
   icon: string;
   sub: string;
+  /** what to do on the step's page and why, in the order the page expects it */
+  how: string;
   available: boolean;
   optional?: boolean;
   milestone?: string;
 }
 
 export const STEPS = [
-  { id: "wakeword", label: "Wake word", icon: "type", sub: "Name, language and how the TTS voices should pronounce it.", available: true },
-  { id: "generate", label: "Synthetic samples", icon: "sparkles", sub: "Hundreds of cloned German voices (OmniVoice) saying your wake word, checked phonetically.", available: true },
-  { id: "record", label: "Own recordings", icon: "mic", sub: "Record takes, split them, sort every clip.", available: true, optional: true },
-  { id: "train", label: "Training", icon: "pulse", sub: "Featurize, train on the GPU and calibrate the on-device operating point.", available: true },
-  { id: "mining", label: "Mining", icon: "radar", sub: "Hunt false triggers in hours of speech and feed them back.", available: false, optional: true, milestone: "Milestone 2" },
-  { id: "export", label: "Export", icon: "download", sub: "Pick an operating point and ship it to ESPHome.", available: false, milestone: "Milestone 1" },
+  {
+    id: "wakeword", label: "Wake word", icon: "type", available: true,
+    sub: "Name, language and how the TTS voices should pronounce it.",
+    how: "Add the spellings the voices should read (a phonetic spelling like “Dscharwis” helps), run the pronunciation check and listen. Then let “Suggest” find sound-alike words: the model learns to ignore them.",
+  },
+  {
+    id: "generate", label: "Synthetic samples", icon: "sparkles", available: true,
+    sub: "Hundreds of cloned German voices (OmniVoice) saying your wake word, checked phonetically.",
+    how: "Generate the wake word clips first (20,000 is a good default, about 1.5 hours), then the sound-alike negatives below. Both run in the background; listen to a few clips to make sure they sound right.",
+  },
+  {
+    id: "record", label: "Own recordings", icon: "mic", available: true, optional: true,
+    sub: "Record takes, split them, sort every clip.",
+    how: "Optional, but real voices help most: record a take in which you (and others) say the wake word a few times with pauses, it is split into clips automatically. Mark each clip Pos (the wake word) or Neg (anything else, e.g. similar words). New clips count from the next training run.",
+  },
+  {
+    id: "train", label: "Training", icon: "pulse", available: true,
+    sub: "Featurize, train on the GPU and calibrate the on-device operating point.",
+    how: "Fast (about 20 minutes) gives a first model to try, Thorough (about 40 minutes) is the one to keep. Every run picks its own cutoff for the false alarm target and can be downloaded for ESPHome. Train again whenever new clips arrived, e.g. after mining.",
+  },
+  {
+    id: "mining", label: "Mining", icon: "radar", available: true, optional: true,
+    sub: "Run a trained model over hours of real speech, listen to what triggers it and feed the false triggers back.",
+    how: "Scan with the newest model; an automatic check labels the clear false triggers and leaves the doubtful ones for you. Then train again and scan the new model: repeat until hardly anything triggers.",
+  },
+  {
+    id: "export", label: "Export", icon: "download", available: false, milestone: "Milestone 1",
+    sub: "Pick an operating point and ship it to ESPHome.",
+    how: "Coming soon. Until then, download the .tflite and the .json manifest of a run in the training step.",
+  },
 ] as const satisfies readonly Step[];
 
 export type StepId = (typeof STEPS)[number]["id"];
@@ -30,15 +57,15 @@ export function stepState(id: StepId, p: Project): { done: boolean; metric: stri
     case "wakeword":
       return { done: !!p.wake_word, metric: p.wake_word };
     case "generate":
-      return { done: s.generated > 0, metric: `${s.generated.toLocaleString()} clips` };
+      return { done: s.generated > 0, metric: plural(s.generated, "{n} clip", "{n} clips") };
     case "record":
-      return { done: s.positive > 0, metric: `${s.positive} pos · ${s.negative + s.borrowed} neg` };
+      return { done: s.positive > 0, metric: t("{pos} pos · {neg} neg", { pos: s.positive, neg: s.negative + s.borrowed }) };
     case "train":
-      return { done: s.runs > 0, metric: s.runs === 1 ? "1 model" : `${s.runs} models` };
+      return { done: s.runs > 0, metric: plural(s.runs, "{n} model", "{n} models") };
     case "mining":
-      return { done: false, metric: "after training" };
+      return { done: s.mined > 0, metric: s.mined ? t("{n} mined", { n: s.mined }) : t("after training") };
     case "export":
-      return { done: s.models > 0, metric: `${s.models} models` };
+      return { done: s.models > 0, metric: plural(s.models, "{n} model", "{n} models") };
   }
 }
 

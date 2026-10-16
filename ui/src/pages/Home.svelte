@@ -2,7 +2,8 @@
   import Icon from "../components/Icon.svelte";
   import { projects } from "../lib/api";
   import { href } from "../lib/router.svelte";
-  import { STEPS, nextStep, stepState } from "../lib/steps";
+  import { STEPS, isStep, nextStep, stepState } from "../lib/steps";
+  import { plural, t } from "../lib/i18n.svelte";
   import { toastError } from "../lib/state.svelte";
   import { LANGUAGES, type Project } from "../lib/types";
 
@@ -15,46 +16,48 @@
     .catch(toastError)
     .finally(() => (loaded = true));
 
-  const nextLabel = (p: Project) => STEPS.find((s) => s.id === nextStep(p))!.label;
+  const nextStepOf = (p: Project) => (p.next && isStep(p.next.step) ? p.next.step : nextStep(p));
+  const nextLabel = (p: Project) =>
+    p.next ? t(p.next.tpl.title, p.next.params) : t(STEPS.find((s) => s.id === nextStepOf(p))!.label);
+  const wake = (p: Project) => p.summary.generated + p.summary.positive;
+  const neg = (p: Project) => p.summary.negative + p.summary.confusable + p.summary.mined + p.summary.borrowed;
 </script>
 
 <div class="home">
   {#if loaded && !list.length}
     <section class="panel hero">
-      <span class="eyebrow">Welcome</span>
-      <h2>Forge your first wake word</h2>
+      <span class="eyebrow">{t("Welcome")}</span>
+      <h2>{t("Forge your first wake word")}</h2>
       <p class="dim">
-        A short wizard sets the word and its pronunciation. After that a step bar walks you through synthetic samples, your own
-        recordings, training, mining and the ESPHome export.
+        {t("A short wizard sets the word and its pronunciation. After that a step bar walks you through synthetic samples, your own recordings, training, mining and the ESPHome export.")}
       </p>
-      <a class="cta" href={href.new}><Icon name="plus" size={18} /> New wake word</a>
+      <a class="cta" href={href.new}><Icon name="plus" size={18} /> {t("New wake word")}</a>
     </section>
   {:else}
     <div class="grid">
       <a class="panel card new" href={href.new}>
         <span class="plus"><Icon name="plus" size={26} /></span>
-        <strong>New wake word</strong>
-        <span class="dim">Guided setup in four short steps</span>
+        <strong>{t("New wake word")}</strong>
+        <span class="dim">{t("Guided setup in four short steps")}</span>
       </a>
       {#each list as p (p.slug)}
-        <a class="panel card" href={href.project(p.slug)}>
+        <a class="panel card" href={href.project(p.slug, nextStepOf(p))}>
           <div class="top">
-            <span class="chip">{LANGUAGES[p.language] ?? p.language}</span>
+            <span class="chip">{LANGUAGES[p.language] ? t(LANGUAGES[p.language]) : p.language}</span>
             <span class="faint mono small">{p.updated.slice(0, 10)}</span>
           </div>
           <h2>{p.wake_word}</h2>
-          <div class="track" aria-label="Progress">
+          <div class="track" aria-label={t("Progress")}>
             {#each STEPS as s (s.id)}
-              <span class:done={stepState(s.id, p).done} title="{s.label}: {stepState(s.id, p).metric}"></span>
+              <span class:done={stepState(s.id, p).done} title="{t(s.label)}: {stepState(s.id, p).metric}"></span>
             {/each}
           </div>
           <div class="nums mono">
-            <span class="pos">{p.summary.positive} pos</span>
-            <span class="neg">{p.summary.negative} neg</span>
-            <span>{p.summary.generated} tts</span>
-            <span>{p.summary.models} models</span>
+            <span class="pos" title={t("synthetic + own recordings")}>{t("{n} wake word", { n: wake(p) })}</span>
+            <span class="neg" title={t("sound-alikes + mined + own + borrowed")}>{t("{n} negative", { n: neg(p) })}</span>
+            <span>{plural(p.summary.runs, "{n} model", "{n} models")}</span>
           </div>
-          <div class="next">Next: <strong>{nextLabel(p)}</strong> <Icon name="next" size={14} /></div>
+          <div class="next">{t("Next:")} <strong>{nextLabel(p)}</strong> <Icon name="next" size={14} /></div>
         </a>
       {/each}
     </div>

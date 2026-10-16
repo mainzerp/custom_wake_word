@@ -3,6 +3,7 @@
   import ProjectFields from "../components/project/ProjectFields.svelte";
   import PronunciationCheck from "../components/project/PronunciationCheck.svelte";
   import { projects } from "../lib/api";
+  import { t } from "../lib/i18n.svelte";
   import { go, href } from "../lib/router.svelte";
   import { STEPS, nextStep } from "../lib/steps";
   import { toast, toastError } from "../lib/state.svelte";
@@ -38,7 +39,7 @@
     busy = true;
     try {
       const p = await projects.create($state.snapshot(settings));
-      toast(`Project "${p.wake_word}" created.`);
+      toast(t("Project \"{name}\" created.", { name: p.wake_word }));
       go(href.project(p.slug, nextStep(p)));
     } catch (e) {
       toastError(e);
@@ -58,25 +59,25 @@
 <svelte:window onkeydown={onkey} />
 
 <div class="wizard">
-  <div class="progress" aria-label="Step {page + 1} of {PAGES.length}">
+  <div class="progress" aria-label={t("Step {n} of {total}", { n: page + 1, total: PAGES.length })}>
     {#each PAGES as p, i (p.id)}
-      <button class="seg" class:done={i < page} class:on={i === page} disabled={i > page || busy} onclick={() => (page = i)} aria-label={p.title}></button>
+      <button class="seg" class:done={i < page} class:on={i === page} disabled={i > page || busy} onclick={() => (page = i)} aria-label={t(p.title)}></button>
     {/each}
   </div>
 
   <section class="panel card">
-    <span class="eyebrow">New wake word · {page + 1}/{PAGES.length}</span>
-    <h2>{current.title}</h2>
-    <p class="dim lead">{current.text}</p>
+    <span class="eyebrow">{t("New wake word")} · {page + 1}/{PAGES.length}</span>
+    <h2>{t(current.title)}</h2>
+    <p class="dim lead">{t(current.text)}</p>
 
     <div class="body">
       {#if current.id === "review"}
         <div class="summary">
           <div class="big">{settings.wake_word}</div>
           <div class="chips">
-            <span class="chip">{LANGUAGES[settings.language] ?? settings.language}</span>
+            <span class="chip">{t(LANGUAGES[settings.language] ?? settings.language)}</span>
             {#each settings.tts_phrases as p (p)}<span class="chip pos">{p}</span>{/each}
-            {#if settings.author}<span class="chip">by {settings.author}</span>{/if}
+            {#if settings.author}<span class="chip">{t("by {author}", { author: settings.author })}</span>{/if}
           </div>
         </div>
         <ol class="plan">
@@ -85,9 +86,9 @@
               <span class="num mono">{String(i + 2).padStart(2, "0")}</span>
               <Icon name={s.icon} size={18} />
               <div>
-                <strong>{s.label}</strong>
-                {#if "optional" in s && s.optional}<span class="tag">optional</span>{/if}
-                <p class="dim">{s.sub}</p>
+                <strong>{t(s.label)}</strong>
+                {#if "optional" in s && s.optional}<span class="tag">{t("optional")}</span>{/if}
+                <p class="dim">{t(s.sub)}</p>
               </div>
             </li>
           {/each}
@@ -102,12 +103,12 @@
 
     <footer>
       {#if page === 0}
-        <a class="ghost-link" href={href.home}>Cancel</a>
+        <a class="ghost-link" href={href.home}>{t("Cancel")}</a>
       {:else}
-        <button class="ghost" onclick={() => page--} disabled={busy}><Icon name="back" size={16} /> Back</button>
+        <button class="ghost" onclick={() => page--} disabled={busy}><Icon name="back" size={16} /> {t("Back")}</button>
       {/if}
       <button class="primary" onclick={next} disabled={!canNext || busy}>
-        {page === PAGES.length - 1 ? "Create project" : "Continue"}
+        {page === PAGES.length - 1 ? t("Create project") : t("Continue")}
         <Icon name={page === PAGES.length - 1 ? "check" : "next"} size={16} />
       </button>
     </footer>

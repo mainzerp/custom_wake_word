@@ -31,12 +31,12 @@ import soundfile as sf
 import torch
 from scipy.signal import resample_poly
 
+from trainer import models
 from trainer.tts import corpus
 from trainer.tts.phonetic import MIN_NEGATIVE_PHONES, POSITIVE_MAX, PhoneChecker, Score
 from trainer.tts.voices import load_bank, voice_dir
 
 ENGINE = "omnivoice"
-MODEL = "k2-fsa/OmniVoice"
 SHARD_SIZE = 1024
 PUNCTUATION = [(".", 0.5), ("!", 0.25), ("?", 0.15), ("", 0.1)]
 DESIGN_ATTRS = {
@@ -75,7 +75,7 @@ class Synth:
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA not available; refusing to run OmniVoice on the CPU")
         self.language = language
-        self.model = OmniVoice.from_pretrained(MODEL, device_map="cuda:0", dtype=torch.float16)
+        self.model = OmniVoice.from_pretrained(models.local(models.OMNIVOICE), device_map="cuda:0", dtype=torch.float16)
         self.config = OmniVoiceGenerationConfig(num_step=steps)
         self.rate = self.model.sampling_rate
         g = np.gcd(corpus.SAMPLE_RATE, self.rate)

@@ -58,6 +58,7 @@ export interface ProjectSummary extends Counts {
   models: number;
   borrowed: number;
   confusable: number;
+  mined: number;
 }
 
 export interface BorrowEntry {
@@ -83,6 +84,8 @@ export interface Project extends ProjectSettings {
   updated: string;
   borrow_negatives: BorrowEntry[];
   summary: ProjectSummary;
+  /** the guide's recommendation (project list only) */
+  next?: Guide["next"] | null;
 }
 
 export interface Range {
@@ -261,3 +264,160 @@ export const DEFAULT_PARAMS: SplitParams = {
   pad: 0.15,
   floor_window: 5,
 };
+
+export interface MiningSource {
+  id: string;
+  label: string;
+  hours: number;
+  files: number;
+  note: string;
+}
+
+export interface MiningModel {
+  run: string;
+  profile: string;
+  started: string;
+  cutoff: number;
+  window: number;
+  recall?: number;
+  faph?: number;
+}
+
+export type MiningLabel = "negative" | "positive" | "skip";
+
+export interface MiningRun {
+  id: string;
+  run: string;
+  model: string;
+  /** the model's calibrated cutoff (what the device fires on) */
+  cutoff: number;
+  window: number;
+  /** the cutoff this scan collected triggers at */
+  mine_cutoff: number;
+  sources: string[];
+  hours_total: number;
+  hours_done: number;
+  overflow: number;
+  /** the audio is declared free of the wake word: the check labels clear false triggers */
+  auto?: boolean;
+  state: JobState | "unknown";
+  started: string;
+  finished?: string;
+  seconds?: number;
+  hits: number;
+  counts: Record<MiningLabel | "open" | "auto" | "flagged", number>;
+  matches: number;
+  /** hits the automatic check has seen */
+  triaged: number;
+  device_hits: number;
+  faph: number | null;
+}
+
+export interface MiningHit {
+  n: number;
+  source: string;
+  ref: string;
+  offset: number;
+  score: number;
+  peak: number;
+  text: string | null;
+  match: boolean;
+  /** seconds from the clip start to the trigger */
+  pre: number;
+  seconds: number;
+  label: MiningLabel | null;
+  /** the label was set by the automatic check */
+  auto: boolean;
+  check: MiningCheck | null;
+}
+
+export interface MiningCheck {
+  phones: string;
+  /** phone distance of the best matching stretch to the wake word */
+  contained: number;
+  text_distance?: number;
+  text_words?: string;
+  /** Whisper's transcript when the source has none */
+  asr?: string;
+  verdict: "negative" | "review" | "duplicate";
+  reason: string;
+}
+
+export interface MiningJob extends Job {
+  mine?: string;
+  done_s?: number;
+  total_s?: number;
+  hits?: number;
+  triage?: { done: number; total: number; negative?: number; review?: number; duplicate?: number };
+}
+
+export interface MiningStatus {
+  sources: MiningSource[];
+  models: MiningModel[];
+  runs: MiningRun[];
+  totals: { negatives: number; positives: number };
+  job: MiningJob | null;
+  active: Job | null;
+}
+
+export interface GuideChange {
+  id: string;
+  label: string;
+  before: number;
+  now: number;
+  truth: boolean;
+}
+
+export interface Guide {
+  /** the one thing to do next */
+  next: {
+    step: string;
+    title: string;
+    text: string;
+    action: string | null;
+    /** English templates with {name} placeholders, translated in the UI */
+    tpl: { title: string; text: string };
+    params: Record<string, string | number>;
+  };
+  /** steps that need attention, e.g. training after new data */
+  steps: Record<string, { attention: boolean; note: string; tpl: string; params: Record<string, string | number> }>;
+  /** training data that changed since the newest model */
+  changes: GuideChange[];
+  run: string | null;
+}
+
+export type SetupUse = "training" | "generation" | "mining";
+
+export interface SetupItem {
+  id: string;
+  label: string;
+  purpose: string;
+  needed_for: SetupUse[];
+  license: string;
+  /** bytes to download */
+  download: number;
+  /** bytes on disk when ready */
+  disk: number;
+  /** extra bytes while preparing (one archive) */
+  scratch: number;
+  files: string[];
+  state: "ready" | "partial" | "missing";
+  have: number;
+  want: number;
+}
+
+export interface SetupJob extends Job {
+  items?: Record<string, { state: string; label: string; bytes: number; total: number; files: number; message?: string }>;
+  done_bytes?: number;
+  total_bytes?: number;
+}
+
+export interface SetupStatus {
+  items: SetupItem[];
+  speech_shards: { have: number; total: number; hours_each: number };
+  disk: { free: number; total: number };
+  needed: { download: number; disk: number };
+  ready_for: Record<SetupUse, boolean>;
+  job: SetupJob | null;
+  active: Job | null;
+}

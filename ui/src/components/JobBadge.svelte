@@ -1,6 +1,7 @@
 <script lang="ts">
   import { jobs } from "../lib/api";
   import { duration } from "../lib/format";
+  import { t } from "../lib/i18n.svelte";
   import { STALE_AFTER, summarize } from "../lib/jobs";
   import { href } from "../lib/router.svelte";
   import type { Job } from "../lib/types";
@@ -38,14 +39,16 @@
   <a
     class="badge"
     class:stale
-    href={href.project(job.project, sum.step)}
-    title="{sum.label} for “{job.project}”: {sum.detail}, running for {duration(job.elapsed)}{stale ? ` · no progress for ${duration(job.age)}` : ''}"
+    href={sum.step === "setup" ? href.setup : href.project(job.project, sum.step)}
+    title={(job.kind === "setup" ? t("{label}: {detail}, running for {time}", { label: sum.label, detail: sum.detail, time: duration(job.elapsed) })
+      : t("{label} for “{project}”: {detail}, running for {time}", { label: sum.label, project: job.project, detail: sum.detail, time: duration(job.elapsed) }))
+      + (stale ? ` · ${t("no progress for {time}", { time: duration(job.age) })}` : "")}
   >
     <span class="dot"></span>
-    <span class="what"><strong>{sum.label}</strong> <span class="dim">{job.project}</span></span>
+    <span class="what"><strong>{sum.label}</strong> {#if job.kind !== "setup"}<span class="dim">{job.project}</span>{/if}</span>
     <span class="bar" class:indeterminate={sum.pct == null}><span style:width="{sum.pct ?? 100}%"></span></span>
     <span class="mono num">{sum.pct != null ? `${Math.floor(sum.pct)}%` : sum.detail}</span>
-    {#if sum.eta != null}<span class="mono dim num">ETA {duration(sum.eta)}</span>{/if}
+    {#if sum.eta != null}<span class="mono dim num">{t("ETA {time}", { time: duration(sum.eta) })}</span>{/if}
   </a>
 {/if}
 

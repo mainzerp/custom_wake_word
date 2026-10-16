@@ -21,12 +21,15 @@ import pyarrow.ipc as ipc
 import soundfile as sf
 from scipy.signal import resample_poly
 
+from trainer import models
 from trainer.paths import DATA, VOICES
 
 RATE = 24000
 MIN_CROP_S, MAX_CROP_S = 2.5, 5.0
 ENGLISH = {"the", "and", "was", "of", "that", "to", "i", "it", "my", "when", "if", "you", "is"}
 SOURCES = {"de": DATA / "downloads" / "kartoffelphon"}
+# The bank is built from these shards only, so more shards downloaded for mining (trainer/setup.py) leave it as is.
+BANK_SHARDS = {"de": ["test-00000.arrow"]}
 
 
 def voice_dir(language: str) -> Path:
@@ -77,9 +80,10 @@ def crop_at_pauses(y: np.ndarray, sr: int) -> np.ndarray | None:
 
 
 def candidates(language: str, rng: random.Random) -> list[dict]:
-    shards = sorted(SOURCES[language].glob("*.arrow"))
-    if not shards:
-        raise FileNotFoundError(f"no Arrow shards in {SOURCES[language]}")
+    shards = [SOURCES[language] / name for name in BANK_SHARDS[language]]
+    missing = [s.name for s in shards if not s.is_file()]
+    if missing:
+        raise FileNotFoundError(f"missing Arrow shards in {SOURCES[language]}: {', '.join(missing)} (run the setup)")
     seen, out = set(), []
     for shard in shards:
         table = ipc.open_stream(shard).read_all()
@@ -127,7 +131,7 @@ def build(language: str, max_voices: int, seed: int) -> None:
     chosen = male[:half] + female[:max_voices - min(half, len(male))]
     chosen = (chosen + [x for x in crops if x not in chosen])[:max_voices]
 
-    asr = pipeline("automatic-speech-recognition", model="openai/whisper-large-v3-turbo", dtype=torch.float16,
+    asr = pipeline("automatic-speech-recognition", model=models.local(models.WHISPER), dtype=torch.float16,
                    device="cuda:0")
     audio16 = [resample_poly(x[1], 2, 3).astype(np.float32) for x in chosen]
     texts = asr([{"raw": a, "sampling_rate": 16000} for a in audio16], batch_size=16,

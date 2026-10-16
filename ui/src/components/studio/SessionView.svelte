@@ -4,6 +4,7 @@
   import Icon from "../Icon.svelte";
   import Waveform, { type Region } from "../Waveform.svelte";
   import { studio } from "../../lib/api";
+  import { plural, t } from "../../lib/i18n.svelte";
   import { player } from "../../lib/player.svelte";
   import { clipBounds, formatSession, labelCounts } from "../../lib/session";
   import { setCounts, toast, toastError } from "../../lib/state.svelte";
@@ -52,7 +53,7 @@
       autoplay = false;
       player.stop();
       const left = labelCounts(session).unsorted;
-      toast(left ? `End of list, ${left} clips still unsorted.` : "All clips sorted.");
+      toast(left ? plural(left, "End of list, {n} clip still unsorted.", "End of list, {n} clips still unsorted.") : t("All clips sorted."));
       return;
     }
     focus = c.name;
@@ -117,11 +118,19 @@
   }
 
   async function markUnsorted(label: Label) {
-    if (!confirm(`Mark ${n.unsorted} unsorted clips as ${label}?`)) return;
+    const question =
+      label === "positive"
+        ? plural(n.unsorted, "Mark {n} unsorted clip as positive?", "Mark {n} unsorted clips as positive?")
+        : plural(n.unsorted, "Mark {n} unsorted clip as negative?", "Mark {n} unsorted clips as negative?");
+    if (!confirm(question)) return;
     const res = await run(() => studio.labelUnsorted(session.name, label));
     if (res) {
       apply(res);
-      toast(`Marked ${n.unsorted} clips as ${label}.`);
+      toast(
+        label === "positive"
+          ? plural(n.unsorted, "Marked {n} clip as positive.", "Marked {n} clips as positive.")
+          : plural(n.unsorted, "Marked {n} clip as negative.", "Marked {n} clips as negative."),
+      );
     }
   }
 
@@ -130,24 +139,41 @@
     if (res) {
       apply(res);
       prefix = res.session.prefix;
-      toast(res.session.prefix ? `Clips renamed to "${res.session.prefix}".` : "Prefix removed.");
+      toast(res.session.prefix ? t("Clips renamed to \"{prefix}\".", { prefix: res.session.prefix }) : t("Prefix removed."));
     }
   }
 
   async function resplit() {
     const sorted = n.positive + n.negative;
-    if (sorted && !confirm(`Re-splitting resets sorting and removes this take's ${sorted} sorted clips from the sample sets. Continue?`)) return;
+    if (
+      sorted &&
+      !confirm(
+        plural(
+          sorted,
+          "Re-splitting resets sorting and removes this take's {n} sorted clip from the sample sets. Continue?",
+          "Re-splitting resets sorting and removes this take's {n} sorted clips from the sample sets. Continue?",
+        ),
+      )
+    )
+      return;
     player.stop();
     const res = await run(() => studio.split(session.name, $state.snapshot(params)));
     if (res) {
       apply(res);
       focus = null;
-      toast(`Split into ${res.session.clips.length} clips.`);
+      toast(plural(res.session.clips.length, "Split into {n} clip.", "Split into {n} clips."));
     }
   }
 
   async function removeSession() {
-    if (!confirm(`Delete take ${formatSession(session.name)} including the full recording? Clips already sorted into the sample sets are kept.`)) return;
+    if (
+      !confirm(
+        t("Delete take {take} including the full recording? Clips already sorted into the sample sets are kept.", {
+          take: formatSession(session.name),
+        }),
+      )
+    )
+      return;
     player.stop();
     const res = await run(() => studio.deleteSession(session.name));
     if (res) {
@@ -206,13 +232,13 @@
   <div class="panel top">
     <div class="title">
       <div>
-        <span class="eyebrow">Take</span>
+        <span class="eyebrow">{t("Take")}</span>
         <h2 class="mono">{formatSession(session.name)}</h2>
       </div>
       <div class="chips">
         <span class="chip mono">{session.duration}s</span>
-        <span class="chip mono">{session.clips.length} clips</span>
-        {#if session.rejected}<span class="chip warn mono" title="Regions shorter or longer than the limits">{session.rejected} skipped</span>{/if}
+        <span class="chip mono">{plural(session.clips.length, "{n} clip", "{n} clips")}</span>
+        {#if session.rejected}<span class="chip warn mono" title={t("Regions shorter or longer than the limits")}>{t("{n} skipped", { n: session.rejected })}</span>{/if}
       </div>
     </div>
 
@@ -231,11 +257,11 @@
 
     <div class="controls">
       <div class="group">
-        <input bind:value={prefix} maxlength="40" placeholder="prefix" aria-label="Clip prefix" />
-        <button onclick={rename} disabled={busy || prefix === session.prefix}><Icon name="tag" size={15} /> Rename</button>
-        <button onclick={resplit} disabled={busy} title="Uses the split settings on the left. Resets sorting."><Icon name="split" size={15} /> Re-split</button>
+        <input bind:value={prefix} maxlength="40" placeholder={t("prefix")} aria-label={t("Clip prefix")} />
+        <button onclick={rename} disabled={busy || prefix === session.prefix}><Icon name="tag" size={15} /> {t("Rename")}</button>
+        <button onclick={resplit} disabled={busy} title={t("Uses the split settings on the left. Resets sorting.")}><Icon name="split" size={15} /> {t("Re-split")}</button>
       </div>
-      <button class="danger" onclick={removeSession} disabled={busy}><Icon name="trash" size={15} /> Delete take</button>
+      <button class="danger" onclick={removeSession} disabled={busy}><Icon name="trash" size={15} /> {t("Delete take")}</button>
     </div>
   </div>
 
@@ -243,21 +269,21 @@
     <div class="bar">
       <button class="primary play" class:on={autoplay} onclick={toggleAutoplay} disabled={!session.clips.length}>
         <Icon name={autoplay ? "stop" : "play"} size={16} />
-        {autoplay ? "Stop" : "Play unsorted"}
+        {autoplay ? t("Stop") : t("Play unsorted")}
       </button>
       <div class="tally mono">
-        <span class="chip warn"><span class="dot"></span>{n.unsorted} open</span>
+        <span class="chip warn"><span class="dot"></span>{t("{n} open", { n: n.unsorted })}</span>
         <span class="chip pos"><span class="dot"></span>{n.positive}</span>
         <span class="chip neg"><span class="dot"></span>{n.negative}</span>
       </div>
       <div class="bulk">
-        <button class="pos small" disabled={busy || !n.unsorted} onclick={() => markUnsorted("positive")}>All open → Pos</button>
-        <button class="neg small" disabled={busy || !n.unsorted} onclick={() => markUnsorted("negative")}>All open → Neg</button>
+        <button class="pos small" disabled={busy || !n.unsorted} onclick={() => markUnsorted("positive")}>{t("All open → Pos")}</button>
+        <button class="neg small" disabled={busy || !n.unsorted} onclick={() => markUnsorted("negative")}>{t("All open → Neg")}</button>
       </div>
     </div>
     <p class="keys faint">
-      <kbd>P</kbd> positive <kbd>N</kbd> negative <kbd>D</kbd> delete <kbd>R</kbd>/<kbd>Space</kbd> replay <kbd>←</kbd><kbd>→</kbd> move
-      <kbd>Esc</kbd> stop · click a label again to undo
+      <kbd>P</kbd> {t("positive")} <kbd>N</kbd> {t("negative")} <kbd>D</kbd> {t("delete")} <kbd>R</kbd>/<kbd>Space</kbd> {t("replay")}
+      <kbd>←</kbd><kbd>→</kbd> {t("move")} <kbd>Esc</kbd> {t("stop")} · {t("click a label again to undo")}
     </p>
 
     <div class="grid">

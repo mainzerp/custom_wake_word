@@ -1,5 +1,6 @@
 <script lang="ts">
   import { loadPeaks, type Peaks } from "../lib/audio";
+  import { t } from "../lib/i18n.svelte";
 
   export interface Region {
     id: string;
@@ -118,7 +119,7 @@
 
 <div class="wave" bind:clientWidth={width} style:height="{height}px" class:clickable={!!(onseek || onregion)}>
   <canvas bind:this={canvas} style:width="{width}px" style:height="{height}px" onclick={click}></canvas>
-  {#if failed}<span class="err">audio unavailable</span>{/if}
+  {#if failed}<span class="err">{t("audio unavailable")}</span>{/if}
 </div>
 
 <style>

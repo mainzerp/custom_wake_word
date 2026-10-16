@@ -2,6 +2,7 @@
   import Icon from "../Icon.svelte";
   import MiniClip from "../MiniClip.svelte";
   import { tts } from "../../lib/api";
+  import { t } from "../../lib/i18n.svelte";
   import { toastError } from "../../lib/state.svelte";
   import type { GenClip } from "../../lib/types";
 
@@ -36,19 +37,18 @@
 <div class="check">
   <div class="head">
     <div>
-      <span class="eyebrow">Pronunciation check</span>
+      <span class="eyebrow">{t("Pronunciation check")}</span>
       <p class="dim small">
-        One male and one female cloned voice per spelling, with the recognized phones (IPA) and their distance Δ to the
-        closest spelling (≤ 0.30 is kept). Pink = this clip would be dropped. Takes about 40 s.
+        {t("One male and one female cloned voice per spelling, with the recognized phones (IPA) and their distance Δ to the closest spelling (≤ 0.30 is kept). Pink = this clip would be dropped. Takes about 40 s.")}
       </p>
     </div>
     <button class="small" onclick={check} disabled={busy || !valid.length}>
       <Icon name={busy ? "replay" : "play"} size={14} />
-      {busy ? "Synthesizing…" : clips.length ? "New voices" : "Check pronunciation"}
+      {busy ? t("Synthesizing…") : clips.length ? t("New voices") : t("Check pronunciation")}
     </button>
   </div>
   {#if stale}
-    <p class="hint warn">Spellings changed since this check.</p>
+    <p class="hint warn">{t("Spellings changed since this check.")}</p>
   {/if}
   {#each groups as g (g.phrase)}
     <div class="phrase">
@@ -56,7 +56,7 @@
         <strong>{g.phrase}</strong>
         {#if g.clips.some((c) => c.hit !== null && c.hit !== undefined)}
           {@const ok = g.clips.filter((c) => c.hit).length}
-          <span class="chip {ok === g.clips.length ? 'pos' : ok ? 'warn' : 'neg'} mono">{ok}/{g.clips.length} recognized</span>
+          <span class="chip {ok === g.clips.length ? 'pos' : ok ? 'warn' : 'neg'} mono">{t("{ok}/{total} recognized", { ok, total: g.clips.length })}</span>
         {/if}
       </div>
       <div class="grid">

@@ -10,6 +10,8 @@ PROJECTS = DATA / "projects"
 VOICES = DATA / "voices"
 DATASETS = DATA / "datasets"
 FEATURE_CACHE = DATA / "cache" / "features"
+DOWNLOADS = DATA / "downloads"
+SYSTEM = DATA / "system"  # jobs that belong to no project (setup), as SYSTEM/jobs/<id>/
 UI_DIST = REPO_ROOT / "ui" / "dist"
 
 # Pre-project layout, only read by `python -m trainer.projects migrate`.

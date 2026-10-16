@@ -1,17 +1,18 @@
 <script lang="ts">
   import type { Session } from "../../lib/types";
   import { formatSession, labelCounts } from "../../lib/session";
+  import { plural, t } from "../../lib/i18n.svelte";
 
   let { sessions, selected, onselect }: { sessions: Session[]; selected: string | null; onselect: (name: string) => void } = $props();
 </script>
 
 <div class="panel list">
   <div class="head">
-    <span class="eyebrow">Takes</span>
+    <span class="eyebrow">{t("Takes")}</span>
     <span class="mono faint">{sessions.length}</span>
   </div>
   {#if !sessions.length}
-    <p class="faint none">Nothing recorded yet.</p>
+    <p class="faint none">{t("Nothing recorded yet.")}</p>
   {/if}
   <ul>
     {#each sessions as s (s.name)}
@@ -28,8 +29,8 @@
             <span class="n" style:width="{(n.negative / total) * 100}%"></span>
           </div>
           <div class="row meta mono">
-            <span>{s.clips.length} clips · {s.duration}s</span>
-            <span class:todo={n.unsorted > 0}>{n.unsorted ? `${n.unsorted} open` : "sorted"}</span>
+            <span>{plural(s.clips.length, "{n} clip · {duration}s", "{n} clips · {duration}s", { duration: s.duration })}</span>
+            <span class:todo={n.unsorted > 0}>{n.unsorted ? t("{n} open", { n: n.unsorted }) : t("sorted")}</span>
           </div>
         </button>
       </li>

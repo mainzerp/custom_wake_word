@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-MODEL = "facebook/wav2vec2-xlsr-53-espeak-cv-ft"
+MODEL = "facebook/wav2vec2-xlsr-53-espeak-cv-ft"  # pinned in trainer/models.py (PHONES)
 # Calibrated with spikes/phonetic_check.py ("Jarvis"/"Dscharwis"): OmniVoice clips 79 % positive / 0 % negative,
 # own recordings median 0.24, random 0.6-1.3 s German speech 0 % positive / 88 % negative, Piper MLS gibberish
 # 0 % positive; "Garvis" (0.33) and "Davis" (0.44) land in the gray zone.
@@ -196,17 +196,19 @@ def band(full: float, contained: float, n_phones: int) -> str:
 class PhoneChecker:
     def __init__(self, language: str, phrases: list[str], device: str = "cuda"):
         import torch
-        from huggingface_hub import hf_hub_download
         from transformers import AutoModelForCTC, Wav2Vec2FeatureExtractor
+
+        from trainer import models
 
         if device == "cuda" and not torch.cuda.is_available():
             raise RuntimeError("CUDA not available; refusing to run the phone recognizer on the CPU")
         self.torch, self.device = torch, device
-        vocab = json.loads(open(hf_hub_download(MODEL, "vocab.json"), encoding="utf-8").read())
+        path = models.local(models.PHONES)
+        vocab = json.loads(open(f"{path}/vocab.json", encoding="utf-8").read())
         self.id2tok = {i: t for t, i in vocab.items()}
         self.special = {t for t in vocab if t.startswith("<") or t in ("|", "")}
-        self.extractor = Wav2Vec2FeatureExtractor.from_pretrained(MODEL)
-        self.model = AutoModelForCTC.from_pretrained(MODEL, dtype=torch.float16).to(device).eval()
+        self.extractor = Wav2Vec2FeatureExtractor.from_pretrained(path)
+        self.model = AutoModelForCTC.from_pretrained(path, dtype=torch.float16).to(device).eval()
         inventory = {t for t in vocab if t not in self.special}
         self.targets = {p: tokenize(espeak_ipa(p, language), inventory) for p in phrases}
 

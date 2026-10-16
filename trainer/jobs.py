@@ -3,6 +3,7 @@
   <project>/jobs/<YYYYMMDD-HHMMSS>-<kind>/job.json       kind, command, pid, started
   <project>/jobs/<YYYYMMDD-HHMMSS>-<kind>/progress.json  written by the worker (state, done, total, ...)
   <project>/jobs/<YYYYMMDD-HHMMSS>-<kind>/log.txt        worker stdout + stderr
+  data/system/jobs/...                                     the same for jobs of no project (the setup)
 
 Jobs run in their own session, so uvicorn reloads neither kill them nor lose track of them:
 the state is derived from the files and the pid alone.
@@ -19,10 +20,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from trainer.paths import PROJECTS, REPO_ROOT
+from trainer.paths import PROJECTS, REPO_ROOT, SYSTEM
 
 JOB_RE = re.compile(r"^\d{8}-\d{6}-[a-z]+$")
 LOG_TAIL_BYTES = 6000
+LOG_NOISE = ("W:onnxruntime", "XNNPACK delegate")
 
 
 def pid_alive(pid: int) -> bool:
@@ -64,7 +66,7 @@ def log_tail(path: Path) -> str:
     with open(path, "rb") as f:
         f.seek(max(0, path.stat().st_size - LOG_TAIL_BYTES))
         lines = f.read().decode("utf-8", "replace").splitlines()
-    return "\n".join(line for line in lines if "W:onnxruntime" not in line)[-LOG_TAIL_BYTES:]
+    return "\n".join(line for line in lines if not any(n in line for n in LOG_NOISE))[-LOG_TAIL_BYTES:]
 
 
 def timing(job: dict, progress: dict, alive: bool) -> dict:
@@ -94,7 +96,10 @@ def info(job_dir: Path, with_log: bool = False) -> dict:
 
 
 def job_dirs(project: Path | None = None) -> list[Path]:
-    roots = [project / "jobs"] if project else [p / "jobs" for p in PROJECTS.iterdir()] if PROJECTS.is_dir() else []
+    if project:
+        roots = [project / "jobs"]
+    else:
+        roots = ([p / "jobs" for p in PROJECTS.iterdir()] if PROJECTS.is_dir() else []) + [SYSTEM / "jobs"]
     return sorted((d for r in roots if r.is_dir() for d in r.iterdir() if JOB_RE.match(d.name)), key=lambda d: d.name)
 
 
