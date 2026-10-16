@@ -48,7 +48,7 @@ export interface SoundAlike {
   text: string;
   distance: number;
   level: SoundAlikeLevel;
-  kind?: "word" | "onset" | "inner" | "vowel" | "ending";
+  kind?: "mined" | "word" | "onset" | "inner" | "vowel" | "ending";
 }
 
 export interface ProjectSummary extends Counts {

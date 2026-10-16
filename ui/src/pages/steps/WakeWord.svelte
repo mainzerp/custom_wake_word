@@ -46,7 +46,7 @@
     <ProjectFields bind:settings sections={["phrases"]} />
     <PronunciationCheck language={settings.language} phrases={settings.tts_phrases} />
     <hr />
-    <SoundAlikes bind:words={settings.confusables} language={settings.language} phrases={settings.tts_phrases} />
+    <SoundAlikes bind:words={settings.confusables} language={settings.language} phrases={settings.tts_phrases} project={project.slug} auto="show" />
     <hr />
     <ProjectFields bind:settings sections={["manifest"]} />
     <div class="actions">

@@ -2,6 +2,7 @@
   import Icon from "../components/Icon.svelte";
   import ProjectFields from "../components/project/ProjectFields.svelte";
   import PronunciationCheck from "../components/project/PronunciationCheck.svelte";
+  import SoundAlikes from "../components/project/SoundAlikes.svelte";
   import { projects } from "../lib/api";
   import { t } from "../lib/i18n.svelte";
   import { go, href } from "../lib/router.svelte";
@@ -11,7 +12,7 @@
 
   const PAGES = [
     { id: "name", title: "Name your wake word", text: "This is the word your device listens for. It also becomes the name in ESPHome." },
-    { id: "phrases", title: "Teach the pronunciation", text: "Check how the synthetic voices should spell it. You can change this any time." },
+    { id: "phrases", title: "Teach the pronunciation", text: "Check how the synthetic voices should spell it, and which similar words the model must ignore. You can change both any time." },
     { id: "manifest", title: "Credits", text: "Optional fields for the published ESPHome manifest." },
     { id: "review", title: "Ready to forge", text: "Here is what happens next. Every step stays reachable from the step bar." },
   ] as const;
@@ -97,6 +98,7 @@
         <ProjectFields bind:settings sections={[current.id]} hero={current.id === "name"} />
         {#if current.id === "phrases"}
           <PronunciationCheck language={settings.language} phrases={settings.tts_phrases} />
+          <SoundAlikes bind:words={settings.confusables} language={settings.language} phrases={settings.tts_phrases} auto="add" />
         {/if}
       {/if}
     </div>

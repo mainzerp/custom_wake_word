@@ -16,6 +16,7 @@ from pathlib import Path
 from trainer import jobs, setup
 from trainer.mining import store as mining
 from trainer.train.sources import project_sources
+from trainer.tts import corpus
 
 KIND_STEP = {"generate": "generate", "confusables": "generate", "train": "train", "mining": "mining", "triage": "mining"}
 KIND_LABEL = {"generate": "Synthetic samples are being generated", "confusables": "Sound-alikes are being generated",
@@ -78,6 +79,15 @@ def guide(project: Path) -> dict:
         steps["mining"] = note("{n} to check", n=open_reviews)
     elif run and not scanned and not diff:
         steps["mining"] = note("test the model")
+    # Sound-alikes: words close to the wake word, spoken by the voice bank (the old model fired on half of them).
+    words = data.get("confusables") or []
+    spoken = set(corpus.load_index(corpus.confusable_dir(project)).get("phrases") or [])
+    alike_clips = sum(s.clips for s in sources if s.id == "sound-alikes")
+    unspoken = [w for w in words if w not in spoken]
+    if not words:
+        steps["wakeword"] = note("add sound-alikes")
+    if unspoken or (words and not alike_clips):
+        steps["generate"] = note("{n} sound-alikes to generate", n=len(unspoken) or len(words))
 
     def nxt(step: str, title: str, text: str, action: str | None = None, **params) -> dict:
         """Texts are templates with {name} placeholders: the UI translates the template and fills in the params."""
@@ -99,6 +109,15 @@ def guide(project: Path) -> dict:
         rec = nxt("generate", "Generate synthetic samples",
                   "Thousands of cloned voices saying the wake word are the base of every model. Check the pronunciation "
                   "first, then generate 20,000 clips (about 1.5 hours).", "Generate samples")
+    elif not alike_clips and not words:
+        rec = nxt("wakeword", "Add sound-alike words",
+                  "Words that sound close to the wake word teach the model what to ignore; without them it also fires on "
+                  "similar words. Suggest in the wake word step finds them in a few seconds.", "Find sound-alikes")
+    elif not alike_clips:
+        rec = nxt("generate", "Generate the sound-alike clips",
+                  "{n} sound-alike words are set but not spoken yet. The voices say each of them (about 20 minutes for "
+                  "5,000 clips), so the model learns to tell them apart from the wake word.", "Generate sound-alikes",
+                  n=len(words))
     elif not run:
         rec = nxt("train", "Train your first model",
                   "{positives} wake word clips are ready. A fast run takes about 20 minutes and already gives a model to "
@@ -111,6 +130,10 @@ def guide(project: Path) -> dict:
         rec = nxt("train", "Train again: the model does not know the new data yet",
                   "Since the last model ({run}): {changes}. Clips only take effect in a new training run; then scan again "
                   "to see whether the false triggers went down.", "Train again", run=run["id"], changes=describe(diff))
+    elif unspoken:
+        rec = nxt("generate", "Generate clips for the new sound-alikes",
+                  "{n} sound-alike words were added after the last generation and are not spoken yet. Top up the "
+                  "sound-alike clips, then train again.", "Generate sound-alikes", n=len(unspoken))
     elif not scanned:
         rec = nxt("mining", "Test the model on real speech",
                   "Mining runs the newest model over hours of speech and collects what triggers it. The clear false "

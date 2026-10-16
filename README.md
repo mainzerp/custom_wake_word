@@ -1,5 +1,7 @@
 # Wakeforge
 
+> **Note:** This project is "vibe coded" — the code was written iteratively with AI assistance.
+
 A lean, self-maintained training pipeline for custom [microWakeWord](https://github.com/kahrendt/microWakeWord)
 models (ESPHome on-device wake words). It replaces the TaterTotterson trainer container for
 day-to-day use.
@@ -41,7 +43,11 @@ Everything is organised per wake word ("project"). The start page lists all proj
 opens a four-page wizard (name + language, TTS spellings, manifest credits, review). Inside a project
 a step bar guides through the workflow, every step stays clickable and shows its status:
 
-1. Wake word: settings (name, language, TTS spellings, author, website)
+1. Wake word: settings (name, language, TTS spellings, author, website) and sound-alikes (`trainer/tts/confusables.py`):
+   words at phone distance 0.35-0.65 from the spellings, suggested from letter edits, voice bank transcripts and the
+   closest words of the project's mined false triggers (those first). The wizard fills them in by itself (remove what
+   you do not want), an empty list in step 1 shows suggestions right away, and the guide asks for them before the first
+   training and whenever words are not spoken yet.
 2. Synthetic samples: OmniVoice clones a random voice from the voice bank (or designs one from speaker
    attributes) per clip, with random tempo and punctuation. A multilingual phone recognizer
    (`facebook/wav2vec2-xlsr-53-espeak-cv-ft`) transcribes every clip into IPA and `trainer/tts/phonetic.py`
@@ -133,7 +139,6 @@ Data layout below `data/`:
 | `system/jobs/` | Jobs that belong to no project (the setup) |
 | `voices/<language>/` | Voice bank for cloning: `<id>.wav` (2.5-5 s, 24 kHz, cut at pauses) + `voices.json` (transcript, F0, gender, source). German: 300 voices (150 m / 150 f) from Kartoffelphon |
 | `downloads/kartoffelphon/` | Kartoffelphon Arrow shards `test-NNNNN.arrow` (HF `MultiLlasa/Kartoffelphon-2.5M-de-ger`, test split, German podcasts + LibriVox, CC-BY 4.0): shard 0 is the voice bank source, every shard ~33 h of speech to mine |
-| `models/piper/` | Piper voices from the first spikes (unused by the pipeline) |
 
 `python -m trainer.projects list` shows all projects. `python -m trainer.projects migrate --wake-word X`
 moves a pre-project `data/recordings` + `data/samples` layout into a new project (already done for Dscharwis).
@@ -174,7 +179,7 @@ For UI development run `npm run dev` in `ui/` and open http://localhost:5173 (pr
 Shell into the container:
 
 ```sh
-docker exec -it cww-trainer bash
+docker exec -it wakeforge bash
 ```
 
 Inside the container, use the launchers `py-omni` (OmniVoice venv) and `py-train` (TF venv):
@@ -183,7 +188,6 @@ Inside the container, use the launchers `py-omni` (OmniVoice venv) and `py-train
 py-omni -m trainer.tts.voices build --language de --max 300     # voice bank, once per language
 py-omni -m trainer.tts.omni run --project data/projects/dscharwis --job /tmp/job --count 20000
 py-omni -m trainer.tts.omni preview --project data/projects/dscharwis --phrase Jarvis --out /tmp/preview
-py-train spikes/featurize.py --input data/spikes/piper --output data/spikes/features/piper
 py-train -m microwakeword.model_train_eval --training_config spikes/train_smoke.yaml ... mixednet ...
 ```
 
@@ -191,11 +195,9 @@ py-train -m microwakeword.model_train_eval --training_config spikes/train_smoke.
 
 | Stage | Result |
 |---|---|
-| Piper `de_DE-mls-medium`, spike (batch 128, per-clip WAV) | ~260-320 samples/s inference, 45 samples/s end-to-end (serial resample + WAV write), ~5 % rejected; 50k in ~18 min (old trainer: 28 h) |
-| Piper, former `trainer.tts.generate` (batch 64, tuned CUDA arena, vectorized resample in threads, npz shards; removed after Spike B, see commit 942b8f3) | ~240 clips/s end-to-end, ~4 % rejected; 50k in ~3.5 min, but unusable German audio |
 | OmniVoice, `trainer.tts.omni` (batch 32, 16 steps, 2.5-5 s refs, IPA phone check) | ~3-4 positive clips/s, ~30 % gray zone, ~0.5 % negative candidates. TTS is ~98 % of the time; Whisper as the check was 75x slower than wav2vec2 CTC (30 s padding) and guessed real words |
 | Sound-alikes, `trainer.tts.omni --mode confusable` (24 words, batch 32, 16 steps) | ~4.4 clips/s, ~5 % dropped as too close to the wake word; suggestions (letter edits + 3.6k voice-bank words, espeak in one batch) ~4 s |
-| Phone check calibration (`spikes/phonetic_check.py`) | OmniVoice 79 % positive / 0 % negative, own recordings median Δ 0.24, random German speech 0 % positive / 88 % negative, Piper MLS 0 % positive, "Garvis" 0.33 / "Davis" 0.44 gray |
+| Phone check calibration (`spikes/phonetic_check.py`) | OmniVoice 79 % positive / 0 % negative, own recordings median Δ 0.24, random German speech 0 % positive / 88 % negative, "Garvis" 0.33 / "Davis" 0.44 gray |
 | Featurize 2k clips, 14 workers | 75 s (1600 train clips x2 reps x10 slides = 32k spectrograms, 1.5 GB float32) |
 | Train 500 steps + streaming int8 TFLite export | ~3 min total |
 | `trainer.train` featurize, warm pool (2026-10-16) | 17.7k new clips in 2.7 min (111 clips/s), cache 4.7 GB for 20k + 300 sound-alikes + 98 own |
@@ -204,10 +206,6 @@ py-train -m microwakeword.model_train_eval --training_config spikes/train_smoke.
 | `trainer.train` fast, 2.3k synthetic only | 10k steps, run total 20 min, recall 71 % at 0.19 FA/h |
 
 ### Spike B: German TTS quality (2026-10-15)
-
-Piper `de_DE-mls-medium` turned out to be unusable for German wake words: the batched output is
-numerically identical to Piper's own path, the voice itself produces gibberish for "Dscharwis"
-(1/24 Whisper hits). The old Tater trainer used modern voice-cloning TTS (OmniVoice, Qwen3-TTS, MOSS).
 
 `spikes/ttsb/` compares voice-cloning models with 10 German reference voices from Kartoffelphon
 (`refs.py`), one venv per model under `/opt/spike/<name>` in the container, Whisper large-v3-turbo
@@ -221,16 +219,11 @@ scoring (`score_asr.py`: spelling regex or Kölner Phonetik match) and a listeni
 | Audio8 TTS 0.6B clone | 30/30 | 2.5-3.0 | 10-19 GB |
 | OmniVoice voice design | 18/18 | 6.7 | 2 GB |
 | VoxCPM2 clone + design | 37/48 | 1.0 (no batching) | 6 GB |
-| Piper MLS / Thorsten | 1/24 / 4/4 | very fast | - |
 
 Batch size beyond 16 does not raise throughput for any of them; reference length and diffusion steps do.
 
 Open optimizations: cache background audio in RAM, store spectrograms as uint16 (half size),
 fewer stored slide frames.
-
-Piper on CUDA with varying output lengths: the default arena (power-of-two growth, max cuDNN workspace)
-nearly fills the 24 GB at batch 128 and then stalls for minutes. `arena_extend_strategy=kSameAsRequested`
-plus `cudnn_conv_use_max_workspace=0` at batch 64 gives a steady ~300/s (`spikes/piper_shapes.py`).
 
 ## Dependencies
 
@@ -248,15 +241,8 @@ uv pip compile docker/requirements-omni.in -o docker/requirements-omni.txt \
 
 - The CUDA pip libs are not found automatically by TF (`libcusolver.so.11`; onnxruntime-gpu had the same
   issue with `libcublasLt.so.13`). The `py-train`/`py-omni` launchers set `LD_LIBRARY_PATH` per venv.
-- The Piper venv (`py-tts`) left the image after Spike B; the Piper spikes need the image of commit eb63b98.
 - microWakeWord's `audio/` and `layers/` have no `__init__.py`, so a plain pip install drops them;
   the Dockerfile clones the pinned commit and adds them. TensorBoard is required for `tf.summary`.
-- Piper MLS speakers read slowly: at `length_scale=1` "Dscharwis" takes ~1.4 s (median) and
-  high `noise_w` produces multi-second outliers. The spike uses `length_scale` 0.55-1.0 and
-  `noise_w` 0.2-0.5.
-- Piper voice `de_DE-mls-medium` has 236 speakers, but its ONNX export fixes the `sid` input
-  to batch size 1. `spikes/piper_throughput.py` patches the graph so `sid` is batched and
-  exposes the per-phoneme durations (`w_ceil`) to crop padded rows to their real length.
 - ESPHome manifests may only contain: `type`, `wake_word`, `author`, `website`, `model`,
   `trained_languages`, `version` (2) and `micro{probability_cutoff, sliding_window_size,
   feature_step_size, tensor_arena_size, minimum_esphome_version}`.

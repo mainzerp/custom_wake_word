@@ -95,8 +95,9 @@ export const setupApi = {
 };
 
 export const tts = {
-  soundAlikes: (language: string, phrases: string[], words: string[], suggest = 0) =>
-    post<{ words: SoundAlike[]; suggestions: SoundAlike[] }>("/api/tts/sound-alikes", { language, phrases, words, suggest }),
+  /** project: also suggest the closest words of its mined false triggers */
+  soundAlikes: (language: string, phrases: string[], words: string[], suggest = 0, project?: string) =>
+    post<{ words: SoundAlike[]; suggestions: SoundAlike[] }>("/api/tts/sound-alikes", { language, phrases, words, suggest, project }),
   preview: (language: string, phrases: string[], n = 2) =>
     post<{ engine: string; clips: GenClip[] }>("/api/tts/preview", { language, phrases, n }),
 };

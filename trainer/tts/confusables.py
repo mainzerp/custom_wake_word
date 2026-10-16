@@ -7,6 +7,8 @@ with the same voice bank (trainer.tts.omni, mode "confusable"). Suggestions come
           inner consonant ("Jarbis", "Jaris"), a few endings ("Jarviser")
   words   real words and word pairs from the voice bank transcripts ("Paris", "schau mal") - natural for the TTS and
           the kind of thing that triggers a model in a real living room
+  mined   the closest words in the transcripts of real false triggers found by mining (trainer/mining/triage.py
+          stores them per trigger): proven confusers of this very model, so they come first
 
 Every candidate is scored with the espeak phone distance to the closest spelling (trainer.tts.phonetic). Only the
 band CONFLICT_MAX < distance <= MAX_DISTANCE is kept: closer would be the wake word itself (contradicting labels),
@@ -147,12 +149,31 @@ def ranked(spellings: tuple[str, ...], language: str) -> dict[str, list[tuple[st
     return {k: sorted(v, key=lambda x: (x[1], len(x[0]))) for k, v in out.items()}
 
 
-def suggest(spellings: list[str], language: str, n: int = 24, exclude: list[str] = ()) -> list[dict]:
-    """n diverse sound-alikes, taken round-robin from real words and each kind of letter edit, closest first."""
+def mined_words(project) -> list[str]:
+    """Closest word sequences of a project's mined false triggers (not those labeled as the wake word)."""
+    from trainer.mining import store
+
+    out: dict[str, None] = {}
+    for scan in store.mine_dirs(project):
+        labels = store.labels(scan)
+        for n, check in store.triage(scan).items():
+            words = (check.get("text_words") or "").strip()
+            if words and labels.get(n) != "positive" and check.get("verdict") != "review":
+                out[words[:1].upper() + words[1:]] = None
+    return list(out)
+
+
+def suggest(spellings: list[str], language: str, n: int = 24, exclude: list[str] = (), mined: list[str] = ()) -> list[dict]:
+    """n diverse sound-alikes, taken round-robin from mined, real words and each kind of letter edit, closest first."""
     pools = {k: list(v) for k, v in ranked(tuple(spellings), language).items()}
+    if mined:
+        texts = [m for m in mined if m.lower() not in {s.lower() for s in spellings}]
+        hits = [(t, d) for t, d in zip(texts, score(texts, list(spellings), language)) if phonetic.CONFLICT_MAX < d <= MAX_DISTANCE]
+        if hits:
+            pools["mined"] = sorted(hits, key=lambda x: (x[1], len(x[0])))
     taken = {e.lower() for e in exclude}
     seen = {skeleton(p) for p in phonetic.phrases_phones(list(exclude) + list(spellings), language)}
-    order = [k for k in ("word", "onset", "inner", "vowel", "ending") if k in pools]
+    order = [k for k in ("mined", "word", "onset", "inner", "vowel", "ending") if k in pools]
     out: list[dict] = []
     while len(out) < n and any(pools[k] for k in order):
         for kind in order:
