@@ -3,8 +3,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    image: custom-wake-word:dev
-    container_name: cww-trainer
+    image: wakeforge:dev
+    container_name: wakeforge
     init: true
     shm_size: 8gb
     command: py-train -m uvicorn trainer.server.app:app --host 0.0.0.0 --port 8790 --reload --reload-dir trainer

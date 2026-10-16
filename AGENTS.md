@@ -4,7 +4,7 @@
 - Host: Windows 11, Docker Desktop (WSL2), RTX 3090, driver 591.86 (CUDA 13 capable).
   Everything large goes to `data/` (git-ignored) on F:.
 - Run pipeline code inside the container: `docker compose up -d --build`, then
-  `docker exec cww-trainer py-train ...` (TF/microWakeWord) or `py-omni ...` (OmniVoice TTS + CTC check,
+  `docker exec wakeforge py-train ...` (TF/microWakeWord) or `py-omni ...` (OmniVoice TTS + CTC check,
   PyTorch). Always use these launchers: they set LD_LIBRARY_PATH to the venv's CUDA pip libs. The venvs
   need different CUDA majors (12 vs 13), so never share LD_LIBRARY_PATH. The Piper venv was dropped.
 - German TTS: Piper (all voices incl. MLS) is unusable for wake words; OmniVoice voice cloning won Spike B
