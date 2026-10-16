@@ -38,8 +38,8 @@
     <div>
       <span class="eyebrow">Pronunciation check</span>
       <p class="dim small">
-        One male and one female cloned voice per spelling, with what the phonetic check heard. Pink = this spelling
-        would mostly be dropped during generation. Takes about 40 s.
+        One male and one female cloned voice per spelling, with the recognized phones (IPA) and their distance Δ to the
+        closest spelling (≤ 0.30 is kept). Pink = this clip would be dropped. Takes about 40 s.
       </p>
     </div>
     <button class="small" onclick={check} disabled={busy || !valid.length}>
@@ -61,7 +61,7 @@
       </div>
       <div class="grid">
         {#each g.clips as c (c.url)}
-          <MiniClip url={c.url} label={voice(c.voice)} detail="{c.seconds}s" note={c.transcript} miss={c.hit === false} />
+          <MiniClip url={c.url} label={voice(c.voice)} detail="Δ {c.distance?.toFixed(2) ?? '–'}" note={c.transcript} miss={c.hit === false} />
         {/each}
       </div>
     </div>

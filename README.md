@@ -23,10 +23,15 @@ a step bar guides through the workflow, every step stays clickable and shows its
 
 1. Wake word: settings (name, language, TTS spellings, author, website)
 2. Synthetic samples: OmniVoice clones a random voice from the voice bank (or designs one from speaker
-   attributes) per clip, with random tempo and punctuation. A German wav2vec2 CTC model transcribes every
-   clip phonetically and `trainer/tts/match.py` drops clips that do not sound like a spelling (~20 %).
-   Background job with live progress, stop/continue, pronunciation preview per spelling (with transcripts)
-   and random listening. ~3.5 clips/s on the RTX 3090 (20k clips in ~1.6 h)
+   attributes) per clip, with random tempo and punctuation. A multilingual phone recognizer
+   (`facebook/wav2vec2-xlsr-53-espeak-cv-ft`) transcribes every clip into IPA and `trainer/tts/phonetic.py`
+   compares it with the espeak-ng pronunciation of the spellings (weighted phone edit distance, onset x2.5,
+   vocalized r cheap): Δ ≤ 0.30 positive, Δ ≥ 0.70 (and wake word not contained, ≥ 3 phones) negative
+   candidate, gray zone dropped (~30 %). Background job with live progress, stop/continue and random
+   listening for both sets. ~3-4 positive clips/s on the RTX 3090 (20k clips in ~1.5-2 h)
+
+The pronunciation check (2 voices per spelling, phones + Δ) lives on the wake word page and in the wizard,
+so spellings are verified before generating (`POST /api/tts/preview`, no project needed).
 3. Own recordings: Sample Studio (optional, recommended)
 4. Training - planned, milestone 1
 5. Mining - planned, milestone 2 (optional)
@@ -54,7 +59,8 @@ Data layout below `data/`:
 | `projects/<slug>/recordings/<YYYYMMDD-HHMMSS>/` | Sample Studio takes: `recording.wav`, `clips/`, `clips.json`, `session.json` |
 | `projects/<slug>/samples/positive/`, `.../negative/` | Sorted real clips (16 kHz mono PCM16). A clip's label is the folder holding its copy |
 | `projects/<slug>/generated/tts/` | Synthetic corpus: `corpus.json` index + `shard-*.npz` (int16 clips concatenated, offsets, voice, phrase, speed/design/steps), see `trainer/tts/corpus.py` |
-| `projects/<slug>/generated/preview/` | Last pronunciation previews per spelling |
+| `projects/<slug>/generated/tts-negative/` | Negative candidates: TTS clips that came out clearly different from every spelling (same format) |
+| `cache/preview/<key>/` | Pronunciation check clips (last 20 checks) |
 | `projects/<slug>/jobs/<YYYYMMDD-HHMMSS>-<kind>/` | Background job: `job.json` (command, pid), `progress.json` (written by the worker), `log.txt` |
 | `projects/<slug>/runs/`, `models/` | Training runs, exported models (planned) |
 | `datasets/` | Shared negative feature sets and augmentation audio copied from the old trainer volume |
@@ -97,7 +103,8 @@ py-train -m microwakeword.model_train_eval --training_config spikes/train_smoke.
 |---|---|
 | Piper `de_DE-mls-medium`, spike (batch 128, per-clip WAV) | ~260-320 samples/s inference, 45 samples/s end-to-end (serial resample + WAV write), ~5 % rejected; 50k in ~18 min (old trainer: 28 h) |
 | Piper, former `trainer.tts.generate` (batch 64, tuned CUDA arena, vectorized resample in threads, npz shards; removed after Spike B, see commit 942b8f3) | ~240 clips/s end-to-end, ~4 % rejected; 50k in ~3.5 min, but unusable German audio |
-| OmniVoice, `trainer.tts.omni` (batch 32, 16 steps, 2.5-5 s refs, CTC check) | ~3.5 clips/s end-to-end, ~20 % dropped by the phonetic check. TTS is ~99 % of the time; Whisper as the check was 75x slower than wav2vec2 CTC (30 s padding) |
+| OmniVoice, `trainer.tts.omni` (batch 32, 16 steps, 2.5-5 s refs, IPA phone check) | ~3-4 positive clips/s, ~30 % gray zone, ~0.5 % negative candidates. TTS is ~98 % of the time; Whisper as the check was 75x slower than wav2vec2 CTC (30 s padding) and guessed real words |
+| Phone check calibration (`spikes/phonetic_check.py`) | OmniVoice 79 % positive / 0 % negative, own recordings median Δ 0.24, random German speech 0 % positive / 88 % negative, Piper MLS 0 % positive, "Garvis" 0.33 / "Davis" 0.44 gray |
 | Featurize 2k clips, 14 workers | 75 s (1600 train clips x2 reps x10 slides = 32k spectrograms, 1.5 GB float32) |
 | Train 500 steps + streaming int8 TFLite export | ~3 min total |
 

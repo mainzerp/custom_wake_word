@@ -4,8 +4,9 @@
   py-omni -m trainer.tts.omni preview --language de --phrases Jarvis Dscharwis --out <dir>
 
 Every clip clones a random reference voice from the bank (data/voices/<language>/) or, for --design-share of the
-batches, a voice designed from speaker attributes. Tempo and punctuation vary per clip. A character CTC model
-transcribes each clip and drops it unless it sounds like one of the project's spellings (trainer.tts.match).
+batches, a voice designed from speaker attributes. Tempo and punctuation vary per clip. A phone recognizer scores
+each clip against the espeak pronunciation of the spellings (trainer.tts.phonetic): close clips go to the corpus,
+clearly different ones (TTS slips) to the negative candidates, the gray zone in between is dropped.
 
 `run` is resumable: it tops the corpus up to --count clips. SIGTERM stops after the current batch.
 Progress goes to <job dir>/progress.json.
@@ -27,22 +28,12 @@ import torch
 from scipy.signal import resample_poly
 
 from trainer.tts import corpus
-from trainer.tts.match import contains_wake_word
+from trainer.tts.phonetic import PhoneChecker, Score
 from trainer.tts.voices import load_bank, voice_dir
 
 ENGINE = "omnivoice"
 MODEL = "k2-fsa/OmniVoice"
 SHARD_SIZE = 1024
-# Character CTC models transcribe phonetically ("tscharfis", "chawis") at ~400 clips/s, where Whisper pads every
-# clip to 30 s (~15 clips/s) and guesses real words ("JavaScript").
-ASR_MODELS = {
-    "de": "jonatasgrosman/wav2vec2-large-xlsr-53-german",
-    "en": "jonatasgrosman/wav2vec2-large-xlsr-53-english",
-    "fr": "jonatasgrosman/wav2vec2-large-xlsr-53-french",
-    "nl": "jonatasgrosman/wav2vec2-large-xlsr-53-dutch",
-    "es": "jonatasgrosman/wav2vec2-large-xlsr-53-spanish",
-    "it": "jonatasgrosman/wav2vec2-large-xlsr-53-italian",
-}
 PUNCTUATION = [(".", 0.5), ("!", 0.25), ("?", 0.15), ("", 0.1)]
 DESIGN_ATTRS = {
     "gender": ["male", "female"],
@@ -74,7 +65,7 @@ class Cycle:
 
 
 class Synth:
-    def __init__(self, language: str, steps: int, with_asr: bool):
+    def __init__(self, language: str, steps: int, phrases: list[str] | None):
         from omnivoice import OmniVoice, OmniVoiceGenerationConfig
 
         if not torch.cuda.is_available():
@@ -88,14 +79,7 @@ class Synth:
         self.bank = load_bank(language)
         self.prompts = [self.model.create_voice_clone_prompt(ref_audio=str(voice_dir(language) / f"{v['id']}.wav"),
                                                              ref_text=v["text"]) for v in self.bank]
-        self.asr = None
-        if with_asr and language in ASR_MODELS:
-            from transformers import AutoModelForCTC, Wav2Vec2Processor
-
-            self.asr_processor = Wav2Vec2Processor.from_pretrained(ASR_MODELS[language])
-            self.asr = AutoModelForCTC.from_pretrained(ASR_MODELS[language], dtype=torch.float16).to("cuda").eval()
-        elif with_asr:
-            print(f"no phonetic check model for language {language!r}; clips are not filtered", flush=True)
+        self.checker = PhoneChecker(language, phrases) if phrases else None
 
     def generate(self, texts: list[str], speeds: list[float], prompts=None, instructs=None) -> list[np.ndarray]:
         wavs = self.model.generate(text=texts, language=self.language, speed=speeds, voice_clone_prompt=prompts,
@@ -106,16 +90,10 @@ class Synth:
             out.append(corpus.trim(resample_poly(w, self.up, self.down).astype(np.float32)))
         return out
 
-    def transcribe(self, clips: list[np.ndarray]) -> list[str]:
-        if self.asr is None:
-            return [""] * len(clips)
-        if not clips:
-            return []
-        inp = self.asr_processor(clips, sampling_rate=corpus.SAMPLE_RATE, return_tensors="pt", padding=True)
-        with torch.inference_mode():
-            logits = self.asr(inp.input_values.to("cuda", torch.float16),
-                              attention_mask=inp.attention_mask.to("cuda")).logits
-        return [t.strip() for t in self.asr_processor.batch_decode(logits.argmax(-1))]
+    def score(self, clips: list[np.ndarray]) -> list[Score]:
+        if self.checker is None:
+            return [Score([], 0.0, "positive") for _ in clips]
+        return self.checker.score(clips)
 
 
 def design_voices() -> list[str]:
@@ -152,22 +130,23 @@ def run(args: argparse.Namespace) -> None:
     if index["voice"] not in (None, ENGINE):
         raise RuntimeError(f"corpus was generated with {index['voice']}; reset it before using {ENGINE}")
     start = index["total"]
+    neg_out = corpus.negative_dir(project_dir)
+    neg_index = corpus.load_index(neg_out)
+    negatives_start = neg_index["total"]
     progress = {"state": "running", "done": start, "start": start, "total": args.count, "rejected": 0, "filtered": 0,
-                "rate": 0.0}
+                "negatives": negatives_start, "rate": 0.0}
     write_progress(args.job, **progress, message="loading OmniVoice and the phonetic check")
 
-    synth = Synth(project["language"], args.steps, not args.no_filter)
+    synth = Synth(project["language"], args.steps, None if args.no_filter else phrases)
     designs = design_voices()
-    index["voice"] = ENGINE
-    index.setdefault("voices", [])
-    for p in phrases:
-        if p not in index["phrases"]:
-            index["phrases"].append(p)
     names = [f"bank:{v['id']}" for v in synth.bank] + [f"design:{d}" for d in designs]
-    for n in names:
-        if n not in index["voices"]:
-            index["voices"].append(n)
+    for idx in (index, neg_index):
+        idx["voice"] = ENGINE
+        idx.setdefault("voices", [])
+        idx["phrases"] += [p for p in phrases if p not in idx["phrases"]]
+        idx["voices"] += [n for n in names if n not in idx["voices"]]
     voice_pos = {n: i for i, n in enumerate(index["voices"])}
+    neg_voice_pos = {n: i for i, n in enumerate(neg_index["voices"])}
     print(f"OmniVoice ready: {len(synth.bank)} bank voices, {len(designs)} designs, phrases {phrases}, "
           f"steps {args.steps}, filter {'off' if args.no_filter else 'on'}", flush=True)
     if not synth.bank and args.design_share < 1:
@@ -175,39 +154,41 @@ def run(args: argparse.Namespace) -> None:
 
     rng = random.Random(f"{time.time()}-{start}")
     bank_cycle, design_cycle = Cycle(synth.bank, rng), Cycle(designs, rng)
-    buf: dict[str, list] = {"clips": [], "speaker": [], "phrase": [], "scales": []}
+    new_buf = lambda: {"clips": [], "speaker": [], "phrase": [], "scales": []}  # noqa: E731
+    buf, neg_buf = new_buf(), new_buf()
     done, rejected, filtered, batch_no, t0 = start, 0, 0, 0, time.perf_counter()
-    timing = {"tts": 0.0, "asr": 0.0, "write": 0.0}
+    timing = {"tts": 0.0, "check": 0.0, "write": 0.0}
 
-    def flush() -> None:
-        if buf["clips"]:
-            t = time.perf_counter()
-            corpus.append_shard(out, index, buf["clips"], buf["speaker"], buf["phrase"], buf["scales"])
-            timing["write"] += time.perf_counter() - t
-            for v in buf.values():
-                v.clear()
+    def flush(force: bool = False) -> None:
+        for path, idx, b in ((out, index, buf), (neg_out, neg_index, neg_buf)):
+            if b["clips"] and (force or len(b["clips"]) >= SHARD_SIZE):
+                t = time.perf_counter()
+                corpus.append_shard(path, idx, b["clips"], b["speaker"], b["phrase"], b["scales"])
+                timing["write"] += time.perf_counter() - t
+                for v in b.values():
+                    v.clear()
 
     def collect(batch: list[tuple]) -> None:
         nonlocal done, filtered
         t = time.perf_counter()
-        transcripts = synth.transcribe([b[0] for b in batch])
-        timing["asr"] += time.perf_counter() - t
-        for (clip, voice, phrase, speed, design), text in zip(batch, transcripts):
-            if done >= args.count:
-                break
-            if synth.asr is not None and not contains_wake_word(text, phrases):
-                filtered += 1
+        scores = synth.score([b[0] for b in batch])
+        timing["check"] += time.perf_counter() - t
+        for (clip, voice, phrase, speed, design), s in zip(batch, scores):
+            if s.band == "gray" or (s.band == "positive" and done >= args.count):
+                filtered += s.band == "gray"
                 continue
-            buf["clips"].append(clip / np.abs(clip).max() * 0.9)
-            buf["speaker"].append(voice_pos[voice])
-            buf["phrase"].append(index["phrases"].index(phrase))
-            buf["scales"].append([speed, 1.0 if design else 0.0, float(args.steps)])
-            done += 1
-        if len(buf["clips"]) >= SHARD_SIZE:
-            flush()
+            positive = s.band == "positive"
+            b, pos, idx = (buf, voice_pos, index) if positive else (neg_buf, neg_voice_pos, neg_index)
+            b["clips"].append(clip / np.abs(clip).max() * 0.9)
+            b["speaker"].append(pos[voice])
+            b["phrase"].append(idx["phrases"].index(phrase))
+            b["scales"].append([speed, 1.0 if design else 0.0, float(args.steps), s.distance])
+            done += positive
+        flush()
         rate = (done - start) / (time.perf_counter() - t0)
         write_progress(args.job, **{**progress, "done": done, "rejected": rejected, "filtered": filtered,
-                                    "rate": round(rate, 2), "eta": round((args.count - done) / rate) if rate else None})
+                                    "negatives": neg_index["total"] + len(neg_buf["clips"]), "rate": round(rate, 2),
+                                    "eta": round((args.count - done) / rate) if rate else None})
 
     while not stop and done < args.count:
         batch_no += 1
@@ -234,18 +215,19 @@ def run(args: argparse.Namespace) -> None:
         if batch_no % 20 == 0:
             print(f"{done}/{args.count} {(done - start) / (time.perf_counter() - t0):.1f} clips/s, "
                   f"rejected {rejected}, filtered {filtered}", flush=True)
-    flush()
+    flush(force=True)
     state = "stopped" if stop and done < args.count else "done"
     elapsed = time.perf_counter() - t0
     write_progress(args.job, **{**progress, "state": state, "done": done, "rejected": rejected, "filtered": filtered,
-                                "rate": round((done - start) / elapsed, 2), "eta": 0})
-    print(f"{state}: {done} clips ({done - start} new, {rejected} rejected by length, {filtered} by the phonetic check) in "
-          f"{elapsed:.0f}s, " + ", ".join(f"{k} {v:.1f}s" for k, v in timing.items()), flush=True)
+                                "negatives": neg_index["total"], "rate": round((done - start) / elapsed, 2), "eta": 0})
+    print(f"{state}: {done} clips ({done - start} new, {rejected} rejected by length, {filtered} gray zone, "
+          f"{neg_index['total'] - negatives_start} negative candidates) in {elapsed:.0f}s, "
+          + ", ".join(f"{k} {v:.1f}s" for k, v in timing.items()), flush=True)
 
 
 def preview(args: argparse.Namespace) -> None:
     """--n clips per phrase in one batch, alternating male/female bank voices (designed voices without a bank)."""
-    synth = Synth(args.language, args.steps, True)
+    synth = Synth(args.language, args.steps, args.phrases)
     rng = random.Random()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -266,16 +248,17 @@ def preview(args: argparse.Namespace) -> None:
                 instructs.append(d)
                 labels.append((phrase, d))
     clips = synth.generate(texts, speeds, prompts=prompts or None, instructs=instructs or None)
-    transcripts = synth.transcribe(clips)
+    scores = synth.score(clips)
     result = []
-    for i, ((phrase, voice), speed, clip, text) in enumerate(zip(labels, speeds, clips, transcripts)):
+    for i, ((phrase, voice), speed, clip, s) in enumerate(zip(labels, speeds, clips, scores)):
         if not clip.size:
             continue
         sf.write(out / f"{i}.wav", clip / np.abs(clip).max() * 0.9, corpus.SAMPLE_RATE, subtype="PCM_16")
         result.append({"file": f"{i}.wav", "phrase": phrase, "voice": voice, "speed": speed,
-                       "seconds": round(len(clip) / corpus.SAMPLE_RATE, 2), "transcript": text,
-                       "hit": contains_wake_word(text, args.phrases) if synth.asr is not None else None})
-    print(json.dumps({"engine": ENGINE, "clips": result}))
+                       "seconds": round(len(clip) / corpus.SAMPLE_RATE, 2), "transcript": " ".join(s.phones),
+                       "distance": s.distance, "band": s.band, "hit": s.band == "positive"})
+    targets = {p: " ".join(t) for p, t in synth.checker.targets.items()}
+    print(json.dumps({"engine": ENGINE, "targets": targets, "clips": result}, ensure_ascii=False))
 
 
 def main() -> None:

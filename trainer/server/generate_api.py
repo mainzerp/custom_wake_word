@@ -7,6 +7,8 @@ import json
 import shutil
 import subprocess
 import time
+from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from fastapi import APIRouter
@@ -23,6 +25,7 @@ tts_router = APIRouter(prefix="/api/tts")
 PREVIEW_TIMEOUT_S = 300
 PREVIEWS = DATA / "cache" / "preview"
 KEEP_PREVIEWS = 20
+Kind = Literal["positive", "negative"]
 ENGINE = {"name": "OmniVoice", "model": "k2-fsa/OmniVoice", "license": "CC-BY-NC 4.0 weights"}
 
 
@@ -78,9 +81,11 @@ def status(slug: str) -> dict:
     path = projects.project_dir(slug)
     project = projects.load(path)
     index = corpus.load_index(corpus.corpus_dir(path))
+    negatives = corpus.load_index(corpus.negative_dir(path))
     return {
         "engine": {**ENGINE, "voices": len(load_bank(project["language"]))},
         "corpus": {k: index[k] for k in ("voice", "phrases", "total", "seconds")} | {"shards": len(index["shards"])},
+        "negatives": {"total": negatives["total"], "seconds": negatives["seconds"]},
         "job": jobs.latest(path, "generate"),
         "active": jobs.active(),
     }
@@ -104,6 +109,7 @@ def reset(slug: str) -> dict:
     if running and running["project"] == slug:
         raise ValueError("stop the running job first")
     corpus.reset(corpus.corpus_dir(path))
+    corpus.reset(corpus.negative_dir(path))
     return status(slug)
 
 
@@ -141,16 +147,20 @@ def preview_file(key: str, name: str) -> FileResponse:
     return FileResponse(path, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
 
+def kind_dir(slug: str, kind: Kind) -> Path:
+    path = projects.project_dir(slug)
+    return corpus.corpus_dir(path) if kind == "positive" else corpus.negative_dir(path)
+
+
 @router.get("/samples")
-def samples(slug: str, n: int = 12) -> dict:
-    path = corpus.corpus_dir(projects.project_dir(slug))
-    clips = corpus.random_clips(path, max(1, min(n, 48)), np.random.default_rng())
+def samples(slug: str, n: int = 12, kind: Kind = "positive") -> dict:
+    clips = corpus.random_clips(kind_dir(slug, kind), max(1, min(n, 48)), np.random.default_rng())
     for c in clips:
-        c["url"] = f"/api/projects/{slug}/generate/clip/{c['shard']}/{c['clip']}.wav"
+        c["url"] = f"/api/projects/{slug}/generate/clip/{kind}/{c['shard']}/{c['clip']}.wav"
     return {"clips": clips}
 
 
-@router.get("/clip/{shard}/{clip}.wav")
-def clip(slug: str, shard: int, clip: int) -> Response:
-    audio, _ = corpus.read_clip(corpus.corpus_dir(projects.project_dir(slug)), shard, clip)
+@router.get("/clip/{kind}/{shard}/{clip}.wav")
+def clip(slug: str, kind: Kind, shard: int, clip: int) -> Response:
+    audio, _ = corpus.read_clip(kind_dir(slug, kind), shard, clip)
     return Response(corpus.wav_bytes(audio), media_type="audio/wav", headers={"Cache-Control": "max-age=3600"})

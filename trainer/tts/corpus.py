@@ -3,7 +3,9 @@
   <project>/generated/tts/corpus.json        index: voice (engine), phrases, voices, shards (name, count, seconds)
   <project>/generated/tts/shard-000000.npz   audio (int16, all clips concatenated), offsets (n+1),
                                               speaker (index into voices), phrase (index into phrases),
-                                              scales (n x 3: speed, designed voice 0/1, diffusion steps)
+                                              scales (n x 4: speed, designed voice 0/1, diffusion steps,
+                                              phone distance to the closest spelling, see trainer/tts/phonetic.py)
+  <project>/generated/tts-negative/          same layout for negative candidates (clearly different phones)
 
 All clips are 16 kHz mono. Shards and the index are written atomically, so readers never see partial data.
 """
@@ -34,6 +36,11 @@ def trim(audio: np.ndarray, rel_threshold: float = 0.05, pad: int = 1600) -> np.
 
 def corpus_dir(project: Path) -> Path:
     return project / "generated" / "tts"
+
+
+def negative_dir(project: Path) -> Path:
+    """TTS clips the phonetic check found clearly different from the wake word (negative candidates)."""
+    return project / "generated" / "tts-negative"
 
 
 def load_index(path: Path) -> dict:
@@ -90,6 +97,7 @@ def read_clip(path: Path, shard: int, clip: int) -> tuple[np.ndarray, dict]:
             "voice": voices[speaker] if speaker < len(voices) else str(speaker),
             "phrase": index["phrases"][phrase] if phrase < len(index["phrases"]) else None,
             "scales": [round(float(x), 2) for x in data["scales"][clip]],
+            "distance": round(float(data["scales"][clip][3]), 2) if data["scales"].shape[1] > 3 else None,
             "seconds": round(len(audio) / SAMPLE_RATE, 2),
         }
     return audio, meta

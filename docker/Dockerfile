@@ -8,7 +8,7 @@ FROM python:3.12.14-slim-bookworm
 COPY --from=ghcr.io/astral-sh/uv:0.11.23 /uv /usr/local/bin/uv
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git libsndfile1 ffmpeg \
+    && apt-get install -y --no-install-recommends git libsndfile1 ffmpeg espeak-ng \
     && rm -rf /var/lib/apt/lists/*
 
 ENV UV_LINK_MODE=copy \

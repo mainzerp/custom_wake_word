@@ -38,7 +38,8 @@ export const generate = {
   status: () => request<GenerateStatus>(`${projectBase()}/generate`),
   start: (params: GenerateParams) => post<Job>(`${projectBase()}/generate/start`, params),
   reset: () => post<GenerateStatus>(`${projectBase()}/generate/reset`, {}),
-  samples: (n = 12) => request<{ clips: GenClip[] }>(`${projectBase()}/generate/samples?n=${n}`),
+  samples: (n = 12, kind: "positive" | "negative" = "positive") =>
+    request<{ clips: GenClip[] }>(`${projectBase()}/generate/samples?n=${n}&kind=${kind}`),
 };
 
 export const tts = {

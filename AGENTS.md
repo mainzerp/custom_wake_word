@@ -9,8 +9,11 @@
   need different CUDA majors (12 vs 13), so never share LD_LIBRARY_PATH. The Piper venv was dropped.
 - German TTS: Piper (all voices incl. MLS) is unusable for wake words; OmniVoice voice cloning won Spike B
   (`spikes/ttsb/`, results in README). Voice bank in `data/voices/<lang>/` (`py-omni -m trainer.tts.voices build`).
-  Phonetic check of generated clips: wav2vec2 CTC + `trainer/tts/match.py` (Whisper is ~75x slower on short
-  clips because it pads to 30 s, and it guesses real words). The user prefers the spelling "Jarvis".
+  Phonetic check of generated clips: IPA phone recognizer + espeak-ng targets in `trainer/tts/phonetic.py`
+  (thresholds calibrated with `spikes/phonetic_check.py`; Whisper is ~75x slower on short clips because it pads
+  to 30 s, and it guesses real words). Gray-zone clips are dropped, never labeled negative: near-misses as
+  negatives would contradict the positives. Real confusable negatives should be generated on purpose
+  (GraphemeAug-style spelling mutations, milestone 2). The user prefers the spelling "Jarvis".
 - Spike venvs (`/opt/spike/{qwen,omni,voxcpm,audio8,asr}`) and `gcc` (Triton for Qwen) were installed into
   the running container only; they vanish on rebuild. OmniVoice does not need gcc.
 - From Git Bash, prefix docker commands with `MSYS_NO_PATHCONV=1`, otherwise `/opt/...` paths get

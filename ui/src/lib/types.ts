@@ -83,6 +83,7 @@ export interface Job {
   total?: number;
   rejected?: number;
   filtered?: number;
+  negatives?: number;
   rate?: number;
   eta?: number | null;
   message?: string;
@@ -92,6 +93,7 @@ export interface Job {
 export interface GenerateStatus {
   engine: { name: string; model: string; license: string; voices: number };
   corpus: { voice: string | null; phrases: string[]; total: number; seconds: number; shards: number };
+  negatives: { total: number; seconds: number };
   job: Job | null;
   active: Job | null;
 }
@@ -105,6 +107,8 @@ export interface GenClip {
   scales?: number[];
   transcript?: string;
   hit?: boolean | null;
+  distance?: number | null;
+  band?: "positive" | "gray" | "negative";
 }
 
 export const LANGUAGES: Record<string, string> = {

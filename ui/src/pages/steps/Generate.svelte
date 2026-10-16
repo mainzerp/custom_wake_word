@@ -88,6 +88,7 @@
     if (s) {
       status = s;
       samples = [];
+      negSamples = [];
       if (app.project) app.project.summary.generated = 0;
       toast("Synthetic corpus deleted.");
     }
@@ -97,6 +98,13 @@
     const res = await act(() => generate.samples(12));
     if (res) samples = res.clips;
   }
+
+  let negSamples = $state<GenClip[]>([]);
+  async function drawNegatives() {
+    const res = await act(() => generate.samples(12, "negative"));
+    if (res) negSamples = res.clips;
+  }
+  const clipDetail = (c: GenClip) => `${c.seconds}s${c.distance != null ? ` · Δ ${c.distance.toFixed(2)}` : ""}`;
 
   const fmtEta = (s: number | null | undefined) =>
     s == null ? "–" : s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
@@ -155,7 +163,10 @@
 
       <label class="check">
         <input type="checkbox" bind:checked={params.filter} disabled={running} />
-        <span>Phonetic check <span class="faint">(drop clips that do not sound like a spelling)</span></span>
+        <span>
+          Phonetic check
+          <span class="faint">(keep close clips, drop the gray zone, store clearly different ones as negative candidates)</span>
+        </span>
       </label>
 
       <button class="ghost toggle" onclick={() => (advanced = !advanced)}>
@@ -216,6 +227,10 @@
       <div class="big">
         <div><strong class="mono">{(running ? Math.max(total, job?.done ?? 0) : total).toLocaleString()}</strong><span class="dim">clips</span></div>
         <div><strong class="mono">{hours(status.corpus.seconds)}</strong><span class="dim">hours of audio</span></div>
+        <div class="neg">
+          <strong class="mono">{(running ? Math.max(status.negatives.total, job?.negatives ?? 0) : status.negatives.total).toLocaleString()}</strong>
+          <span class="dim">negative candidates</span>
+        </div>
       </div>
 
       {#if job}
@@ -227,8 +242,8 @@
           <span>{(job.done ?? 0).toLocaleString()} / {(job.total ?? 0).toLocaleString()}</span>
           <span>{job.rate ?? 0} clips/s</span>
           <span>ETA {running ? fmtEta(job.eta) : "–"}</span>
-          <span class="faint" title="Dropped by length or by the phonetic check">
-            {(job.rejected ?? 0) + (job.filtered ?? 0)} dropped{filterRate != null ? ` (${filterRate}% by the check)` : ""}
+          <span class="faint" title="Dropped by length or in the gray zone of the phonetic check">
+            {(job.rejected ?? 0) + (job.filtered ?? 0)} dropped{filterRate != null ? ` (${filterRate}% gray zone)` : ""}
           </span>
         </div>
         {#if job.state === "failed" && job.message}
@@ -260,7 +275,27 @@
       </div>
       <div class="grid">
         {#each samples as c (c.url)}
-          <MiniClip url={c.url} label={voiceLabel(c.voice)} detail="{c.seconds}s · ×{c.scales?.[0]}" note={c.phrase ?? ""} />
+          <MiniClip url={c.url} label={voiceLabel(c.voice)} detail={clipDetail(c)} note={c.phrase ?? ""} />
+        {/each}
+      </div>
+    </section>
+  {/if}
+
+  {#if status.negatives.total}
+    <section class="panel block">
+      <div class="head">
+        <div>
+          <span class="eyebrow">Negative candidates</span>
+          <p class="dim sub">
+            TTS clips that came out clearly different from every spelling (Δ ≥ 0.70, wake word not contained). They can
+            serve as extra negatives in training; listen to make sure none of them sounds like the wake word.
+          </p>
+        </div>
+        <button class="small" onclick={drawNegatives} disabled={busy}><Icon name="replay" size={14} /> Draw 12</button>
+      </div>
+      <div class="grid">
+        {#each negSamples as c (c.url)}
+          <MiniClip url={c.url} label={voiceLabel(c.voice)} detail={clipDetail(c)} note="asked for: {c.phrase ?? ''}" miss />
         {/each}
       </div>
     </section>
@@ -387,6 +422,10 @@
     font-weight: 600;
     color: var(--cyan);
     text-shadow: var(--glow-cyan);
+  }
+  .big .neg strong {
+    color: var(--magenta);
+    text-shadow: var(--glow-magenta);
   }
   .bar {
     position: relative;
