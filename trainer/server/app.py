@@ -23,7 +23,7 @@ from trainer.studio import store
 
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
 
-app = FastAPI(title="custom_wake_word")
+app = FastAPI(title="Wakeforge")
 project_api = APIRouter(prefix="/api/projects")
 studio_api = APIRouter(prefix="/api/projects/{slug}/studio")
 

@@ -1,4 +1,4 @@
-# custom_wake_word
+# Wakeforge
 
 A lean, self-maintained training pipeline for custom [microWakeWord](https://github.com/kahrendt/microWakeWord)
 models (ESPHome on-device wake words). It replaces the TaterTotterson trainer container for
