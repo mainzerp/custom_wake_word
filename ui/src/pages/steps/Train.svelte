@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import Icon from "../../components/Icon.svelte";
   import { jobs, train } from "../../lib/api";
+  import { duration } from "../../lib/format";
   import { href } from "../../lib/router.svelte";
   import { app, toast, toastError } from "../../lib/state.svelte";
   import type { Project, TrainRun, TrainStatus, ValPoint } from "../../lib/types";
@@ -99,10 +100,8 @@
   }
 
   const pct = (x?: number) => (x == null ? "–" : `${(x * 100).toFixed(1)}%`);
-  const fmtEta = (s: number | null | undefined) =>
-    s == null ? "–" : s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
   const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
-  const dur = (s?: number) => (s == null ? "" : fmtEta(s));
+  const dur = (s?: number) => (s == null ? "" : duration(s));
 
   // Sparkline paths for the validation history (x: step, y: 0..1 or 0..maxFaph)
   function path(points: ValPoint[], value: (p: ValPoint) => number, max: number, w = 300, h = 70) {
@@ -172,13 +171,13 @@
           <div class="stats mono">
             <span>{f.done.toLocaleString()} / {f.total.toLocaleString()} clips</span>
             <span>{f.rate} clips/s</span>
-            <span>ETA {fmtEta(f.eta)}</span>
+            <span>ETA {duration(f.eta)}</span>
           </div>
         {:else if job.steps}
           <div class="bar"><span class="fill" class:live={running} style:width="{Math.min(100, ((job.step ?? 0) / job.steps) * 100)}%"></span></div>
           <div class="stats mono">
             <span>step {(job.step ?? 0).toLocaleString()} / {job.steps.toLocaleString()}</span>
-            {#if job.phase === "train"}<span>{job.rate ?? 0} steps/s</span><span>ETA {running ? fmtEta(job.eta) : "–"}</span>{/if}
+            {#if job.phase === "train"}<span>{job.rate ?? 0} steps/s</span><span>ETA {running ? duration(job.eta) : "–"}</span>{/if}
           </div>
         {/if}
         {#if job.message}<p class="dim small">{job.message}</p>{/if}

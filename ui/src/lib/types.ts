@@ -116,6 +116,12 @@ export interface Job {
   negatives?: number;
   rate?: number;
   eta?: number | null;
+  /** worker phase; generation: "loading" (model) then "generating" */
+  phase?: string;
+  /** seconds since the job started (total run time once it ended) */
+  elapsed?: number | null;
+  /** seconds since the worker's last progress write, while it is alive */
+  age?: number | null;
   message?: string;
   log?: string;
 }

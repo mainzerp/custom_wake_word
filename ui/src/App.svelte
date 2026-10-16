@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from "./components/Icon.svelte";
+  import JobBadge from "./components/JobBadge.svelte";
   import Home from "./pages/Home.svelte";
   import NewProject from "./pages/NewProject.svelte";
   import Project from "./pages/Project.svelte";
@@ -22,9 +23,12 @@
       </svg>
       <span class="brand">WAKE<span>FORGE</span></span>
     </a>
-    {#if route.view !== "new"}
-      <a class="newbtn" href={href.new}><Icon name="plus" size={16} /> New wake word</a>
-    {/if}
+    <div class="right">
+      <JobBadge />
+      {#if route.view !== "new"}
+        <a class="newbtn" href={href.new}><Icon name="plus" size={16} /> New wake word</a>
+      {/if}
+    </div>
   </nav>
 
   <main>
@@ -87,6 +91,12 @@
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
+  }
+
+  .right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
   }
 
   .newbtn {

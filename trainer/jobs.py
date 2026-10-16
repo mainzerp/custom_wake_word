@@ -67,6 +67,17 @@ def log_tail(path: Path) -> str:
     return "\n".join(line for line in lines if "W:onnxruntime" not in line)[-LOG_TAIL_BYTES:]
 
 
+def timing(job: dict, progress: dict, alive: bool) -> dict:
+    """Run time so far (or in total) and seconds since the worker's last progress write, on the container's clock."""
+    now, updated = time.time(), progress.get("updated")
+    try:
+        started = datetime.fromisoformat(job["started"]).timestamp()
+    except (KeyError, TypeError, ValueError):
+        return {"elapsed": None, "age": None}
+    end = now if alive else updated or now
+    return {"elapsed": round(max(0.0, end - started)), "age": round(now - updated) if alive and updated else None}
+
+
 def info(job_dir: Path, with_log: bool = False) -> dict:
     job = read_json(job_dir / "job.json")
     progress = read_json(job_dir / "progress.json")
@@ -76,7 +87,7 @@ def info(job_dir: Path, with_log: bool = False) -> dict:
         state = "failed"
         progress.setdefault("message", "worker exited unexpectedly, see log")
     result = {"id": job_dir.name, "project": job_dir.parent.parent.name, "kind": job.get("kind"), "started": job.get("started"),
-              "params": job.get("params", {}), **progress, "state": state, "alive": alive}
+              "params": job.get("params", {}), **progress, "state": state, "alive": alive, **timing(job, progress, alive)}
     if with_log:
         result["log"] = log_tail(job_dir / "log.txt")
     return result

@@ -3,6 +3,7 @@
   import Icon from "../../components/Icon.svelte";
   import MiniClip from "../../components/MiniClip.svelte";
   import ConfusableRun from "../../components/project/ConfusableRun.svelte";
+  import JobStats from "../../components/project/JobStats.svelte";
   import { generate, jobs } from "../../lib/api";
   import { href } from "../../lib/router.svelte";
   import { app, toast, toastError } from "../../lib/state.svelte";
@@ -110,8 +111,6 @@
   }
   const clipDetail = (c: GenClip) => `${c.seconds}s${c.distance != null ? ` · Δ ${c.distance.toFixed(2)}` : ""}`;
 
-  const fmtEta = (s: number | null | undefined) =>
-    s == null ? "–" : s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
   const hours = (s: number) => (s / 3600).toFixed(1);
   const voiceLabel = (v: string) => v.replace(/^(bank|design):/, "");
   const filterRate = $derived(
@@ -242,14 +241,8 @@
           <span class="prev" style:width="{startPct}%"></span>
           <span class="fill" class:live={running} style:left="{startPct}%" style:width="{Math.max(0, pct - startPct)}%"></span>
         </div>
-        <div class="stats mono">
-          <span>{(job.done ?? 0).toLocaleString()} / {(job.total ?? 0).toLocaleString()}</span>
-          <span>{job.rate ?? 0} clips/s</span>
-          <span>ETA {running ? fmtEta(job.eta) : "–"}</span>
-          <span class="faint" title="Dropped by length or in the gray zone of the phonetic check">
-            {(job.rejected ?? 0) + (job.filtered ?? 0)} dropped{filterRate != null ? ` (${filterRate}% gray zone)` : ""}
-          </span>
-        </div>
+        <JobStats {job} {running} dropTitle="Dropped by length or in the gray zone of the phonetic check"
+          dropNote={filterRate != null ? `${filterRate}% gray zone` : ""} />
         {#if job.state === "failed" && job.message}
           <p class="hint err">{job.message}</p>
         {/if}
@@ -463,13 +456,6 @@
     to {
       background-position: -200% 0;
     }
-  }
-  .stats {
-    display: flex;
-    gap: 22px;
-    flex-wrap: wrap;
-    font-size: 13px;
-    color: var(--text-dim);
   }
   .blink {
     animation: blink 1s steps(2) infinite;

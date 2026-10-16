@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import Icon from "../Icon.svelte";
   import MiniClip from "../MiniClip.svelte";
+  import JobStats from "./JobStats.svelte";
   import { generate, jobs } from "../../lib/api";
   import { href } from "../../lib/router.svelte";
   import { app, toast, toastError } from "../../lib/state.svelte";
@@ -88,8 +89,6 @@
   });
 
   const voice = (v: string) => v.replace(/^(bank|design):/, "");
-  const fmtEta = (s: number | null | undefined) =>
-    s == null ? "–" : s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
   const label = $derived(
     total >= params.count ? "Target reached" : total ? `Continue to ${params.count.toLocaleString()}` : `Generate ${params.count.toLocaleString()} clips`,
   );
@@ -156,12 +155,7 @@
             <span class="prev" style:width="{startPct}%"></span>
             <span class="fill" class:live={running} style:left="{startPct}%" style:width="{Math.max(0, pct - startPct)}%"></span>
           </div>
-          <div class="stats mono">
-            <span>{(job.done ?? 0).toLocaleString()} / {(job.total ?? 0).toLocaleString()}</span>
-            <span>{job.rate ?? 0} clips/s</span>
-            <span>ETA {running ? fmtEta(job.eta) : "–"}</span>
-            <span class="faint" title="Dropped by length, or because they sounded like the wake word">{(job.rejected ?? 0) + (job.filtered ?? 0)} dropped</span>
-          </div>
+          <JobStats {job} {running} dropTitle="Dropped by length, or because they sounded like the wake word" />
           {#if job.state === "failed" && job.message}
             <p class="hint err">{job.message}</p>
           {/if}
@@ -325,12 +319,6 @@
   }
   .bar .fill.live {
     box-shadow: var(--glow-magenta);
-  }
-  .stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    font-size: 12.5px;
   }
   .log {
     margin: 0;

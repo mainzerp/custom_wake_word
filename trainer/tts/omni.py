@@ -143,8 +143,8 @@ def run(args: argparse.Namespace) -> None:
     neg_out = corpus.negative_dir(project_dir)
     neg_index = corpus.load_index(neg_out)
     negatives_start = neg_index["total"]
-    progress = {"state": "running", "done": start, "start": start, "total": args.count, "rejected": 0, "filtered": 0,
-                "negatives": negatives_start, "rate": 0.0}
+    progress = {"state": "running", "phase": "loading", "done": start, "start": start, "total": args.count, "rejected": 0,
+                "filtered": 0, "negatives": negatives_start, "rate": 0.0}
     write_progress(args.job, **progress, message="loading OmniVoice and the phonetic check")
 
     no_filter = args.no_filter and not confusable
@@ -169,6 +169,8 @@ def run(args: argparse.Namespace) -> None:
     buf, neg_buf = new_buf(), new_buf()
     done, rejected, filtered, batch_no, t0 = start, 0, 0, 0, time.perf_counter()
     timing = {"tts": 0.0, "check": 0.0, "write": 0.0}
+    progress["phase"] = "generating"
+    write_progress(args.job, **progress, eta=None)
 
     def flush(force: bool = False) -> None:
         for path, idx, b in ((out, index, buf), (neg_out, neg_index, neg_buf)):
