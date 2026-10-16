@@ -14,7 +14,7 @@ export const STEPS = [
   { id: "wakeword", label: "Wake word", icon: "type", sub: "Name, language and how the TTS voices should pronounce it.", available: true },
   { id: "generate", label: "Synthetic samples", icon: "sparkles", sub: "Hundreds of cloned German voices (OmniVoice) saying your wake word, checked phonetically.", available: true },
   { id: "record", label: "Own recordings", icon: "mic", sub: "Record takes, split them, sort every clip.", available: true, optional: true },
-  { id: "train", label: "Training", icon: "pulse", sub: "Featurize, train and calibrate the model.", available: false, milestone: "Milestone 1" },
+  { id: "train", label: "Training", icon: "pulse", sub: "Featurize, train on the GPU and calibrate the on-device operating point.", available: true },
   { id: "mining", label: "Mining", icon: "radar", sub: "Hunt false triggers in hours of speech and feed them back.", available: false, optional: true, milestone: "Milestone 2" },
   { id: "export", label: "Export", icon: "download", sub: "Pick an operating point and ship it to ESPHome.", available: false, milestone: "Milestone 1" },
 ] as const satisfies readonly Step[];
@@ -34,7 +34,7 @@ export function stepState(id: StepId, p: Project): { done: boolean; metric: stri
     case "record":
       return { done: s.positive > 0, metric: `${s.positive} pos · ${s.negative + s.borrowed} neg` };
     case "train":
-      return { done: s.runs > 0, metric: `${s.runs} runs` };
+      return { done: s.runs > 0, metric: s.runs === 1 ? "1 model" : `${s.runs} models` };
     case "mining":
       return { done: false, metric: "after training" };
     case "export":

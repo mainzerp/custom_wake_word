@@ -39,6 +39,12 @@
   subprocess jobs via `trainer/jobs.py` (`py-omni -m ...` / `py-train -m ...`, one job at a time); the
   worker writes `progress.json` and handles SIGTERM as "stop after this batch". Follow this pattern for
   featurize/train/mining. The UI polls status once per second while a job runs.
+- Training (`trainer/train/`): `py-train -m trainer.train.featurize --project ...` warms the feature cache
+  (~35-55 clips/s with 12 workers), `py-train -m trainer.train.run --project ... --profile fast --steps 600 --job /tmp/j`
+  is a ~6 min smoke run, `py-train -m trainer.train.calibrate --model x.tflite --project ...` scores any model
+  (also the old trainer's `F:\Github\wake-word\models\dscharwis.tflite`). Training runs at ~35 steps/s on the 3090,
+  ~12 steps/s including validation. Changing augmentation or storage needs a bump of `FEATURE_VERSION` in
+  `trainer/train/sources.py`; changing the model flags in `run.py` must keep `spectrogram_length() <= CROP`.
 - Modules run with `python script.py` inside the container need `-e PYTHONPATH=/app`; `-m trainer...` works as is.
 - Quick backend run on the host without Docker (Studio only, no GPU):
   `uv run --no-project --python 3.12 --with fastapi==0.142.4 --with uvicorn==0.54.0 --with soundfile==0.14.0 --with scipy==1.18.1 --with numpy==2.5.3 python -m uvicorn trainer.server.app:app --port 8790`

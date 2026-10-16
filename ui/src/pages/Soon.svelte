@@ -1,12 +1,7 @@
 <script lang="ts">
-  let { step }: { step: "train" | "mining" | "export" } = $props();
+  let { step }: { step: "mining" | "export" } = $props();
 
   const CONTENT = {
-    train: {
-      milestone: "Milestone 1",
-      steps: ["Featurize", "Train", "Calibrate", "Compare"],
-      text: "Pick a profile (fast or thorough) and watch every stage live with progress, logs and a clean stop. Synthetic and own clips are weighted separately.",
-    },
     mining: {
       milestone: "Milestone 2",
       steps: ["Scan audio", "Collect triggers", "Review", "Retrain"],
@@ -15,7 +10,7 @@
     export: {
       milestone: "Milestone 1",
       steps: ["Recall vs FA/h", "Operating point", "Validate", "ESPHome YAML"],
-      text: "Every run with its operating point, side by side with the current model, exported as a clean ESPHome manifest plus .tflite.",
+      text: "Every run side by side with the current model, then published as ESPHome manifest plus .tflite. Until then, download both from a run in the training step.",
     },
   } as const;
 

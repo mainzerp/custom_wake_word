@@ -12,8 +12,8 @@ Goals:
 - Profiles (`fast`, `thorough`).
 - Output: ESPHome-valid manifest (`.json`) + `.tflite`.
 
-Status: early. Web UI with projects, setup wizard, synthetic sample generation and Sample Studio works;
-featurize/train/export are still spikes (`spikes/`).
+Status: early. Web UI with projects, setup wizard, synthetic samples, sound-alikes, Sample Studio and training
+(featurize, train, calibrate, ESPHome manifest + `.tflite` per run) works; mining and the export page are next.
 
 ## Web UI workflow
 
@@ -33,7 +33,21 @@ a step bar guides through the workflow, every step stays clickable and shows its
 The pronunciation check (2 voices per spelling, phones + Δ) lives on the wake word page and in the wizard,
 so spellings are verified before generating (`POST /api/tts/preview`, no project needed).
 3. Own recordings: Sample Studio (optional, recommended)
-4. Training - planned, milestone 1
+4. Training (`trainer/train/`): one background job per run with live phases.
+   - Sources (`sources.py`): synthetic positives (weight 2), own positives (3), sound-alikes (6, penalty 1.25),
+     own negatives (8, 1.25), borrowed projects (4), shared VOiCES speech (12), CHiME-6 dinner party (12),
+     no-speech (5), CHiME-6/DiPCo ambient for validation and test. Clips split 80/10/10 by a hash of their name.
+   - Features (`featurize.py`): microWakeWord augmentation (RIR, background noise, EQ, ...) in a CPU pool, stored
+     as uint16 (lossless, half of float32) and cropped to the 178 frames the model reads. Cached per corpus shard /
+     WAV folder in `data/cache/features/<key>/`, keyed by content + feature version, shared across projects.
+   - Training: microWakeWord `model_train_eval` (mixednet as in the old trainer, batch 16, lr 0.001, negative class
+     weight 20) on the GPU (`mww_entry.py` refuses a CPU-only TF), profiles fast (10k steps) / thorough (40k), then the
+     streaming int8 TFLite export.
+   - Calibration (`calibrate.py`): the quantized streaming model runs over the test split and ~5 h ambient audio;
+     cutoff + sliding window are picked for a target of false accepts per hour (default 0.25) with the old trainer's
+     tier rule; recall per positive source and trigger rate per word-like negative source are reported.
+   - Output per run in `projects/<slug>/runs/<id>/`: `<wake_word>.tflite`, `<wake_word>.json` (ESPHome manifest,
+     allowed keys only), `run.json` (sources, validation history, calibration curve), `mww/` (checkpoints, logs).
 5. Mining - planned, milestone 2 (optional)
 6. Export (ESPHome manifest + `.tflite`) - planned, milestone 1
 
@@ -63,7 +77,8 @@ Data layout below `data/`:
 | `projects/<slug>/generated/tts-confusable/` | Sound-alike negatives: the `confusables` spoken by the voice bank, minus clips that sounded like (or contained) the wake word (same format) |
 | `cache/preview/<key>/` | Pronunciation check clips (last 20 checks) |
 | `projects/<slug>/jobs/<YYYYMMDD-HHMMSS>-<kind>/` | Background job: `job.json` (command, pid), `progress.json` (written by the worker), `log.txt` |
-| `projects/<slug>/runs/`, `models/` | Training runs, exported models (planned) |
+| `projects/<slug>/runs/<YYYYMMDD-HHMMSS>-<profile>/` | Training run: model, manifest, `run.json`, `training_parameters.yaml`, `mww/` train dir |
+| `cache/features/<key>/` | Cached spectrograms per corpus shard or WAV folder (`training/`, `validation/`, `testing/` RaggedMmaps + `done`) |
 | `datasets/` | Shared negative feature sets and augmentation audio copied from the old trainer volume |
 | `voices/<language>/` | Voice bank for cloning: `<id>.wav` (2.5-5 s, 24 kHz, cut at pauses) + `voices.json` (transcript, F0, gender, source). German: 300 voices (150 m / 150 f) from Kartoffelphon |
 | `downloads/kartoffelphon/` | Kartoffelphon Arrow shards (German podcasts + LibriVox, CC-BY 4.0), source of the voice bank |

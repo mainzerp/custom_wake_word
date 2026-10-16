@@ -8,6 +8,8 @@ DATA = Path(os.environ.get("CWW_DATA", REPO_ROOT / "data")).resolve()
 
 PROJECTS = DATA / "projects"
 VOICES = DATA / "voices"
+DATASETS = DATA / "datasets"
+FEATURE_CACHE = DATA / "cache" / "features"
 UI_DIST = REPO_ROOT / "ui" / "dist"
 
 # Pre-project layout, only read by `python -m trainer.projects migrate`.

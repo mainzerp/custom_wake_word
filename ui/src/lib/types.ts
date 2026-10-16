@@ -130,6 +130,84 @@ export interface GenerateStatus {
   active: Job | null;
 }
 
+export interface TrainSource {
+  id: string;
+  label: string;
+  truth: boolean;
+  sampling_weight: number;
+  penalty_weight: number;
+  truncation: string;
+  clips: number;
+  note: string;
+  cached: number;
+  parts: number;
+  prebuilt: boolean;
+}
+
+export interface ValPoint {
+  step: number;
+  recall: number;
+  recall_no_faph: number;
+  faph: number;
+  accuracy: number;
+  precision: number;
+  auc: number;
+  avr: number;
+}
+
+export interface CurvePoint {
+  cutoff: number;
+  recall: number;
+  faph: number;
+}
+
+export interface Calibration {
+  probability_cutoff: number;
+  sliding_window_size: number;
+  recall: number;
+  false_accepts_per_hour: number;
+  target_false_accepts_per_hour: number;
+  met_target: boolean;
+  ambient_hours: number;
+  sources: { id: string; label: string; truth: boolean; clips: number; recall?: number; trigger_rate?: number }[];
+  curve?: CurvePoint[];
+}
+
+export interface TrainRun {
+  id: string;
+  profile: string;
+  steps: number;
+  state: string;
+  started: string;
+  finished?: string;
+  seconds?: number;
+  error?: string;
+  wake_word?: string;
+  target_faph?: number;
+  calibration?: Calibration;
+  files?: { model: string; manifest: string; size: number };
+  history?: ValPoint[];
+  sources?: TrainSource[];
+}
+
+export interface TrainJob extends Job {
+  phase?: "featurize" | "train" | "export" | "calibrate" | "done";
+  run?: string;
+  steps?: number;
+  step?: number;
+  history?: ValPoint[];
+  featurize?: { done: number; total: number; rate: number; eta: number | null };
+}
+
+export interface TrainStatus {
+  sources: TrainSource[];
+  problems: string[];
+  profiles: Record<string, { label: string; steps: number; hint: string }>;
+  runs: TrainRun[];
+  job: TrainJob | null;
+  active: Job | null;
+}
+
 export interface ConfusableParams {
   count: number;
   speed: Range;

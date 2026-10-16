@@ -14,6 +14,8 @@ import type {
   Session,
   SoundAlike,
   SplitParams,
+  TrainRun,
+  TrainStatus,
 } from "./types";
 
 type SessionResult = { session: Session; counts: Counts };
@@ -48,6 +50,14 @@ export const generate = {
     request<{ clips: GenClip[] }>(`${projectBase()}/generate/samples?n=${n}&kind=${kind}`),
   startConfusables: (params: ConfusableParams) => post<Job>(`${projectBase()}/generate/confusables/start`, params),
   resetConfusables: () => post<GenerateStatus>(`${projectBase()}/generate/confusables/reset`, {}),
+};
+
+export const train = {
+  status: () => request<TrainStatus>(`${projectBase()}/train`),
+  start: (profile: string, target_faph: number) => post<Job>(`${projectBase()}/train/start`, { profile, target_faph }),
+  run: (id: string) => request<TrainRun>(`${projectBase()}/train/runs/${id}`),
+  deleteRun: (id: string) => post<{ ok: boolean }>(`${projectBase()}/train/runs/${id}/delete`, {}),
+  fileUrl: (id: string, name: string) => `${projectBase()}/train/runs/${id}/files/${encodeURIComponent(name)}`,
 };
 
 export const tts = {

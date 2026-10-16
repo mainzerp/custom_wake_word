@@ -6,6 +6,7 @@
   import Soon from "./Soon.svelte";
   import Studio from "./Studio.svelte";
   import Generate from "./steps/Generate.svelte";
+  import Train from "./steps/Train.svelte";
   import WakeWord from "./steps/WakeWord.svelte";
   import { projects } from "../lib/api";
   import { href } from "../lib/router.svelte";
@@ -81,6 +82,8 @@
         <WakeWord {project} />
       {:else if current === "generate"}
         <Generate {project} />
+      {:else if current === "train"}
+        <Train {project} />
       {:else if current === "record"}
         <Studio />
         <BorrowNegatives {project} />

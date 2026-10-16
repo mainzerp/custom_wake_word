@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from trainer import jobs, projects
 from trainer.paths import UI_DIST
-from trainer.server import generate_api
+from trainer.server import generate_api, train_api
 from trainer.studio import store
 
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
@@ -216,6 +216,7 @@ app.include_router(project_api)
 app.include_router(studio_api)
 app.include_router(generate_api.router)
 app.include_router(generate_api.tts_router)
+app.include_router(train_api.router)
 
 if UI_DIST.is_dir():
     app.mount("/", StaticFiles(directory=UI_DIST, html=True), name="ui")
