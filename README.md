@@ -124,6 +124,10 @@ py-train -m microwakeword.model_train_eval --training_config spikes/train_smoke.
 | Phone check calibration (`spikes/phonetic_check.py`) | OmniVoice 79 % positive / 0 % negative, own recordings median Δ 0.24, random German speech 0 % positive / 88 % negative, Piper MLS 0 % positive, "Garvis" 0.33 / "Davis" 0.44 gray |
 | Featurize 2k clips, 14 workers | 75 s (1600 train clips x2 reps x10 slides = 32k spectrograms, 1.5 GB float32) |
 | Train 500 steps + streaming int8 TFLite export | ~3 min total |
+| `trainer.train` featurize, warm pool (2026-10-16) | 17.7k new clips in 2.7 min (111 clips/s), cache 4.7 GB for 20k + 300 sound-alikes + 98 own |
+| `trainer.train` thorough, 20k synthetic + 98 own + 300 sound-alikes | 40k steps ~35 min (18-19 steps/s incl. validation), run total 40 min. Test: recall 94.0 % at 0.19 FA/h (cutoff 0.86, window 8), sound-alikes trigger 10.7 % |
+| Old Tater model (50k clips) on the same test set | recall 91.4 % at 0.19 FA/h (cutoff 0.98, window 3), sound-alikes trigger 53.6 % |
+| `trainer.train` fast, 2.3k synthetic only | 10k steps, run total 20 min, recall 71 % at 0.19 FA/h |
 
 ### Spike B: German TTS quality (2026-10-15)
 
