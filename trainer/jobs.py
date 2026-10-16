@@ -39,6 +39,18 @@ def pid_alive(pid: int) -> bool:
         return True
 
 
+def job_alive(job_dir: Path, job: dict) -> bool:
+    """The pid must be alive AND belong to this job: pids restart at 1 when the container is recreated."""
+    pid = job.get("pid", -1)
+    if not pid_alive(pid):
+        return False
+    try:
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().decode("utf-8", "replace")
+    except OSError:
+        return True  # no /proc (host run): trust the pid
+    return str(job_dir) in cmdline
+
+
 def read_json(path: Path) -> dict:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -59,7 +71,7 @@ def info(job_dir: Path, with_log: bool = False) -> dict:
     job = read_json(job_dir / "job.json")
     progress = read_json(job_dir / "progress.json")
     state = progress.get("state", "starting")
-    alive = pid_alive(job.get("pid", -1))
+    alive = job_alive(job_dir, job)
     if state in ("starting", "running") and not alive:
         state = "failed"
         progress.setdefault("message", "worker exited unexpectedly, see log")
@@ -77,7 +89,7 @@ def job_dirs(project: Path | None = None) -> list[Path]:
 
 def active() -> dict | None:
     for d in reversed(job_dirs()):
-        if pid_alive(read_json(d / "job.json").get("pid", -1)):
+        if job_alive(d, read_json(d / "job.json")):
             return info(d)
     return None
 
@@ -117,8 +129,9 @@ def job_dir(project: Path, job_id: str) -> Path:
 
 def stop(path: Path) -> dict:
     """Ask the worker to stop after its current step (SIGTERM); it flushes its output itself."""
-    pid = read_json(path / "job.json").get("pid", -1)
-    if pid_alive(pid):
+    job = read_json(path / "job.json")
+    pid = job.get("pid", -1)
+    if job_alive(path, job):
         os.killpg(pid, signal.SIGTERM)
         for _ in range(20):
             if not pid_alive(pid):
